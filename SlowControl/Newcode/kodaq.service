@@ -1,0 +1,19 @@
+[Unit]
+Description=KoNova Slow Control
+After=network.target
+
+[Service]
+Type=simple
+User=konova2
+WorkingDirectory=/home/konova2/SlowControl/Newcode
+ExecStartPre=/bin/sleep 10
+ExecStart=/bin/bash /home/konova2/SlowControl/Newcode/kodaq_wrapper.sh
+# Don't let systemd restart — the wrapper handles retry logic
+Restart=on-failure
+RestartSec=30
+# If the wrapper itself crashes (not kodaq), systemd restarts it
+StartLimitBurst=5
+StartLimitIntervalSec=600
+
+[Install]
+WantedBy=multi-user.target

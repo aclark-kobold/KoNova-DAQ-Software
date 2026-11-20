@@ -1,0 +1,2015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KoNova Slow Control</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:#0c0e13;--surface:#14171e;--panel-bg:#111318;--border:#1e2230;
+    --text:#c8cdd8;--dim:#5a6070;--accent:#4fc3f7;--ok:#66bb6a;
+    --warn:#ffa726;--err:#ef5350;--temp-clr:#4fc3f7;--hum-clr:#66bb6a;--press-clr:#ce93d8;
+  }
+  body.light {
+    --bg:#f0f2f5;--surface:#ffffff;--panel-bg:#f8f9fa;--border:#d0d5dd;
+    --text:#1a1d23;--dim:#6b7280;--accent:#0284c7;--ok:#16a34a;
+    --warn:#d97706;--err:#dc2626;--temp-clr:#0284c7;--hum-clr:#16a34a;--press-clr:#9333ea;
+  }
+  body.light .card{box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  body.light #log{background:#f8f9fa}
+  body.light .chart-box{background:#ffffff;border-color:#d0d5dd}
+  body.light .time-btn{background:#e5e7eb;color:#374151;border-color:#d0d5dd}
+  body.light .time-btn.active{background:#0284c7;color:#fff;border-color:#0284c7}
+  body.light #petsysLog{background:#f1f5f9}
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+  header{padding:20px 28px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  header h1{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+  .header-right{display:flex;align-items:center;gap:16px}
+  .status{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim)}
+  .status .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--dim);transition:background .3s}
+  .status .dot.live{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+  .status .dot.dead{background:var(--err)}
+  .btn{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;padding:5px 12px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--dim);cursor:pointer;transition:all .2s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.active{border-color:var(--accent);color:var(--accent);background:rgba(79,195,247,.08)}
+  .btn.mute-btn.muted{border-color:var(--warn);color:var(--warn)}
+  #panicBtn{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;width:58px;height:58px;border-radius:50%;border:3px solid #b71c1c;background:#e53935;color:#fff;font-size:20px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+  #panicBtn:hover{background:#c62828;transform:translateX(-50%) scale(1.08);box-shadow:0 0 16px 3px rgba(229,57,53,.7)}
+  #panicBtn:active{transform:translateX(-50%) scale(0.95)}
+  .alarm-banner{display:none;padding:8px 28px;background:rgba(239,83,80,.1);border-bottom:1px solid var(--err);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--err);animation:banner-pulse 2s ease-in-out infinite}
+  .alarm-banner.show{display:block}
+  @keyframes banner-pulse{0%,100%{background:rgba(239,83,80,.06)}50%{background:rgba(239,83,80,.15)}}
+  .main-layout{display:flex;gap:20px;padding:20px 28px}
+  .cards-column{flex:0 0 380px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;max-height:calc(100vh - 130px)}
+  .charts-column{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0;align-content:start}
+  @media (max-width: 900px) {
+    .main-layout{flex-direction:column}
+    .cards-column{flex:none;max-height:none;overflow-y:visible}
+    .charts-column{grid-template-columns:1fr}
+  }
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;transition:border-color .3s,box-shadow .3s;position:relative;overflow:hidden}
+  .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);opacity:.5}
+  .card.error{border-color:var(--err)}.card.error::before{background:var(--err);opacity:1}
+  .card.stale{border-color:var(--warn)}.card.stale::before{background:var(--warn);opacity:.7}
+  .card.alarm{border-color:var(--err);box-shadow:0 0 20px rgba(239,83,80,.15);animation:card-alarm 1.5s ease-in-out infinite}
+  .card.alarm::before{background:var(--err);opacity:1;height:3px}
+  @keyframes card-alarm{0%,100%{box-shadow:0 0 10px rgba(239,83,80,.1)}50%{box-shadow:0 0 25px rgba(239,83,80,.25)}}
+  .card.disconnected{opacity:.4}.card.disconnected::before{background:var(--dim);opacity:.3}
+  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .card-head .name{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--text)}
+  .card-head .badges{display:flex;gap:5px;align-items:center}
+  .card-head .badge{font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 6px;border-radius:3px;background:var(--border);color:var(--dim);letter-spacing:.06em}
+  .alarm-badge{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(239,83,80,.15);color:var(--err);letter-spacing:.06em;font-weight:600;text-transform:uppercase}
+  .readings{display:flex;gap:10px;flex-wrap:wrap}
+  .reading{flex:1;min-width:60px}
+  .reading .label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:1px}
+  .reading .value{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:300;line-height:1.1;transition:color .3s}
+  .reading .unit{font-size:9px;font-weight:400;color:var(--dim);margin-left:2px}
+  .reading.temp .value{color:var(--temp-clr)}.reading.hum .value{color:var(--hum-clr)}.reading.press .value{color:var(--press-clr)}
+  .reading.alarmed .value{color:var(--err)!important}.reading.alarmed .label{color:var(--err)}
+  .card-foot{margin-top:5px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);opacity:.6}
+  .error-msg{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--err);padding:10px 0}
+  .disconnected-msg{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim);padding:10px 0}
+  @keyframes flash{0%{opacity:1}100%{opacity:0}}
+  .flash-dot{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--ok);margin-left:6px;animation:flash 1s ease-out forwards}
+  .chart-controls{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .chart-controls .label-text{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .time-btn{font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--dim);cursor:pointer;transition:all .15s}
+  .time-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .time-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(79,195,247,.1)}
+  .zoom-hint{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);opacity:.5;margin-left:8px}
+  .pan-controls{display:none;align-items:center;gap:4px;margin-left:12px}
+  .pan-controls.show{display:flex}
+  .pan-btn{font-family:'JetBrains Mono',monospace;font-size:14px;width:28px;height:24px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--dim);cursor:pointer;transition:all .15s;padding:0}
+  .pan-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .reset-btn{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--dim);cursor:pointer;transition:all .15s;margin-left:4px}
+  .reset-btn:hover{border-color:var(--err);color:var(--err)}
+  .chart-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;position:relative}
+  .chart-controls{grid-column:1/-1}  /* span all columns */
+  .chart-box canvas{width:100%!important;height:180px!important}
+  .chart-legend{
+    position:absolute;top:12px;right:16px;
+    display:flex;flex-direction:column;gap:3px;
+    background:rgba(12,14,19,.85);border:1px solid var(--border);border-radius:4px;
+    padding:6px 10px;cursor:grab;z-index:10;
+    user-select:none;
+  }
+  .chart-legend.dragging{cursor:grabbing;opacity:.9}
+  .chart-legend-item{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);display:flex;align-items:center;gap:4px;white-space:nowrap}
+  .chart-legend-item .swatch{width:10px;height:3px;border-radius:1px}
+  .panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100}
+  .panel-overlay.open{display:block}
+  .panel{position:fixed;top:0;right:-520px;width:460px;height:100vh;background:var(--panel-bg);border-left:1px solid var(--border);z-index:101;transition:right .3s ease;overflow-y:auto;padding:24px}
+  .panel.open{right:0}
+  .panel.wide{width:700px;right:-760px}
+  .panel.wide.open{right:0}
+  .panel h2{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:20px}
+  .panel-section{margin-bottom:16px;border:1px solid var(--border);border-radius:6px;padding:12px 14px}
+  .panel-section h3{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--text);margin-bottom:10px;letter-spacing:.04em}
+  .threshold-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .threshold-row .t-label{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);width:65px;text-transform:uppercase;letter-spacing:.04em}
+  .threshold-row input{font-family:'JetBrains Mono',monospace;font-size:11px;width:75px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);text-align:right}
+  .threshold-row input:focus{outline:none;border-color:var(--accent)}
+  .threshold-row .t-sep{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)}
+  .panel-actions{display:flex;gap:10px;margin-top:16px}
+  .btn-save{font-family:'JetBrains Mono',monospace;font-size:11px;padding:7px 18px;border:1px solid var(--ok);border-radius:4px;background:rgba(102,187,106,.1);color:var(--ok);cursor:pointer}
+  .btn-save:hover{background:rgba(102,187,106,.2)}
+  .btn-cancel{font-family:'JetBrains Mono',monospace;font-size:11px;padding:7px 18px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--dim);cursor:pointer}
+  .save-status{font-family:'JetBrains Mono',monospace;font-size:10px;margin-top:8px;min-height:16px}
+  .save-status.ok{color:var(--ok)}.save-status.err{color:var(--err)}
+  /* ── Mobile responsive ── */
+  @media (max-width: 600px) {
+    #sensorGrid{grid-template-columns:1fr !important}
+    .card{min-width:unset !important}
+    .reading .value{font-size:14px !important}
+    header h1{font-size:13px}
+    .btn{font-size:9px;padding:4px 7px}
+    .main-layout{flex-direction:column}
+    .charts-column{min-width:unset}
+    #mainFilenameBar{font-size:10px}
+  }
+  /* Touch scroll on mobile */
+  #sensorGrid, .charts-column, #log { -webkit-overflow-scrolling: touch; }
+  .ctrl-btn.running{box-shadow:0 0 0 2px var(--ok);animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+  .ctrl-btn:hover:not(:disabled){filter:brightness(1.2)}
+  .ctrl-btn:disabled{opacity:.35;cursor:not-allowed;filter:none}
+  .btn-green{background:var(--ok)}.btn-blue{background:var(--accent)}.btn-red{background:var(--err)}.btn-orange{background:var(--warn)}
+  .log-cmd{color:var(--accent)}.log-ok{color:var(--ok)}.log-fail{color:var(--err)}.log-warn{color:var(--warn)}.log-info{color:var(--dim)}
+  .acq-step{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;border-radius:3px;border:1px solid var(--border);color:var(--dim);background:var(--bg)}
+  .acq-step.active{border-color:var(--accent);color:var(--accent);background:rgba(79,195,247,.08)}
+  .acq-step.done{border-color:var(--ok);color:var(--ok);background:rgba(102,187,106,.08)}
+</style>
+</head>
+<body>
+<header>
+  <h1>KoNova Slow Control</h1>
+  <div class="header-right">
+    <button class="btn" id="alarmsBtn" onclick="openAlarmsPanel()">ALARMS</button>
+    <button class="btn" id="themeBtn" onclick="toggleTheme()">☀ LIGHT</button>
+    <button class="btn" id="petsysBtn" onclick="openPetsysPanel()">PETSYS</button>
+    <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">connecting…</span></div>
+  </div>
+</header>
+<button id="panicBtn" onclick="triggerPanic()" title="EMERGENCY STOP — stops acquisition, ASIC power, and daqd">🛑<span style="font-size:9px;font-weight:bold;letter-spacing:.05em">STOP</span></button>
+<div class="alarm-banner" id="alarmBanner"><span id="alarmText"></span></div>
+<div id="mainFilenameBar" style="display:none;padding:6px 28px;background:rgba(102,187,106,.12);border-bottom:2px solid var(--ok);font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ok);letter-spacing:.04em;align-items:center;gap:12px">
+  <span style="font-weight:bold;font-size:13px">● ACQ ON</span>
+  <span id="mainAcqFilename" style="color:var(--accent)"></span>
+  <span id="mainAcqCycle" style="color:var(--dim)"></span>
+</div>
+<div class="main-layout">
+  <div class="cards-column" id="sensorGrid"></div>
+  <div class="charts-column">
+    <div class="chart-controls">
+      <span class="label-text">Range:</span>
+      <button class="time-btn" data-minutes="5" onclick="setTimeRange(5,this)">5m</button>
+      <button class="time-btn" data-minutes="15" onclick="setTimeRange(15,this)">15m</button>
+      <button class="time-btn active" data-minutes="60" onclick="setTimeRange(60,this)">1h</button>
+      <button class="time-btn" data-minutes="360" onclick="setTimeRange(360,this)">6h</button>
+      <button class="time-btn" data-minutes="1440" onclick="setTimeRange(1440,this)">1d</button>
+      <button class="time-btn" data-minutes="4320" onclick="setTimeRange(4320,this)">3d</button>
+      <button class="time-btn" data-minutes="10080" onclick="setTimeRange(10080,this)">1w</button>
+      <button class="time-btn" data-minutes="43200" onclick="setTimeRange(43200,this)">1m</button>
+      <span class="zoom-hint">ctrl+drag to zoom · double-click to reset</span>
+      <div class="pan-controls" id="panControls">
+        <button class="pan-btn" onclick="panCharts(-0.25)" title="Pan left">&#9664;</button>
+        <button class="pan-btn" onclick="panCharts(0.25)" title="Pan right">&#9654;</button>
+        <button class="reset-btn" onclick="resetAllZoom()">RESET</button>
+      </div>
+    </div>
+    <div class="chart-controls" style="margin-top:0;margin-bottom:4px">
+      <span class="label-text">Show:</span>
+      <button class="time-btn active" id="viewBtn-temp" onclick="toggleGraph('temp',this)">TEMP</button>
+      <button class="time-btn active" id="viewBtn-hum" onclick="toggleGraph('hum',this)">HUMIDITY</button>
+      <button class="time-btn active" id="viewBtn-press" onclick="toggleGraph('press',this)">PRESSURE</button>
+      <button class="time-btn active" id="viewBtn-tilt" onclick="toggleGraph('tilt',this)">TILT</button>
+      <button class="time-btn active" id="viewBtn-mag" onclick="toggleGraph('mag',this)">MAG FIELD</button>
+      <button class="time-btn active" id="viewBtn-asic" onclick="toggleGraph('asic',this)">ASIC TEMP</button>
+      <button class="time-btn active" id="viewBtn-linux" onclick="toggleGraph('linux',this)">LINUX TEMP</button>
+      <button class="time-btn active" id="viewBtn-disk" onclick="toggleGraph('disk',this)">DISK SPACE</button>
+    </div>
+    <div class="chart-box" id="boxTemp"><h3>Temperature (°C)</h3><canvas id="chartTemp"></canvas><div class="chart-legend" id="legendTemp"></div></div>
+    <div class="chart-box" id="boxHum"><h3>Humidity (%)</h3><canvas id="chartHum"></canvas><div class="chart-legend" id="legendHum"></div></div>
+    <div class="chart-box" id="boxPress"><h3>Pressure (kPa)</h3><canvas id="chartPress"></canvas><div class="chart-legend" id="legendPress"></div></div>
+    <div class="chart-box" id="boxTilt"><h3>Tilt (°)</h3><canvas id="chartAngles"></canvas><div class="chart-legend" id="legendAngles"></div></div>
+    <div class="chart-box" id="boxMag"><h3>Magnetic Field (µT)</h3><canvas id="chartMag"></canvas><div class="chart-legend" id="legendMag"></div></div>
+    <div class="chart-box" id="boxAsic"><h3>ASIC Temperature (°C)</h3><canvas id="chartAsic"></canvas><div class="chart-legend" id="legendAsic"></div></div>
+    <div class="chart-box" id="boxLinux"><h3>Linux CPU Temperature (°C)</h3><canvas id="chartLinux"></canvas><div class="chart-legend" id="legendLinux"></div></div>
+    <div class="chart-box" id="boxDisk"><h3>Disk Free (%) &amp; RAM Free (GB)</h3><canvas id="chartDisk"></canvas><div class="chart-legend" id="legendDisk"></div></div>
+  </div>
+</div>
+<div class="panel-overlay" id="petsysOverlay" onclick="closePetsysPanel()"></div>
+<div class="panel wide" id="petsysPanel">
+  <h2>PETSys DAQ Control</h2>
+
+  <!-- ── DAQ on/off + tests ── -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="ctrl-btn btn-green"  id="ps-daq-on"    onclick="petsysCmd('daq_on')">DAQ ON</button>
+    <button class="ctrl-btn btn-blue"   id="ps-i2c-test"  onclick="petsysCmd('i2c_test')">I2C TEST</button>
+    <button class="ctrl-btn btn-blue"   id="ps-lvds-test" onclick="petsysCmd('lvds_test')">LVDS TEST</button>
+    <button class="ctrl-btn btn-blue"   id="ps-link-test" onclick="petsysCmd('link_test')">LINK TEST</button>
+    <button class="ctrl-btn btn-blue"   id="ps-comms-test" onclick="petsysCmd('comms_test')">COMMS TEST</button>
+    <button class="ctrl-btn btn-red"    id="ps-daq-off"   onclick="petsysCmd('daq_off')">DAQ OFF</button>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);align-self:center">ASIC POWER:</span>
+    <button class="ctrl-btn btn-green"  id="ps-asic-on"    onclick="petsysCmd('asic_power_on')">ON</button>
+    <button class="ctrl-btn btn-red"    id="ps-asic-off"   onclick="petsysCmd('asic_power_off')">OFF</button>
+    <button class="ctrl-btn btn-orange" id="ps-asic-cycle" onclick="if(confirm('Power cycle ASICs?'))petsysCmd('asic_power_cycle')">CYCLE</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)">DAQ:</span>
+    <span id="daqStatusDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--err)"></span>
+    <span id="daqStatusLabel" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--err);font-weight:bold">OFF</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--border);margin:0 4px">|</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)">ASIC PWR:</span>
+    <span id="asicPwrDot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--err)"></span>
+    <span id="asicPwrLabel" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--err);font-weight:bold">OFF</span>
+    <span id="mainsPwrSep" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--border);margin:0 4px;display:none">|</span>
+    <span id="mainsPwrTitle" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);display:none">MAINS:</span>
+    <span id="mainsPwrDot" style="display:none;width:9px;height:9px;border-radius:50%;background:var(--dim)"></span>
+    <span id="mainsPwrLabel" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);font-weight:bold;display:none">—</span>
+  </div>
+
+  <!-- ── Acquisition workflow ── -->
+  <div style="margin-bottom:12px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);font-weight:bold;letter-spacing:.06em;margin-bottom:10px">ACQUISITION WORKFLOW</div>
+
+    <!-- Config fields -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);margin-bottom:3px">DATA FOLDER</div>
+        <input id="acq-data-dir" type="text" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)" placeholder="/home/konova/Desktop/petsys/data">
+      </div>
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);margin-bottom:3px">CONFIG FILE</div>
+        <input id="acq-config" type="text" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)" placeholder="config_muons.ini">
+      </div>
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);margin-bottom:3px">CALIB FOLDER</div>
+        <input id="acq-calib-dir" type="text" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)" placeholder="/home/konova/Desktop/petsys/data">
+      </div>
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);margin-bottom:3px">CALIB MODE</div>
+        <div style="display:flex;gap:5px">
+          <button id="cmode-off"  onclick="setCalibMode('off',this)"  style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 8px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:#0c0e13;cursor:pointer;font-weight:bold">OFF</button>
+          <button id="cmode-on"   onclick="setCalibMode('on',this)"   style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--dim);cursor:pointer">ON</button>
+          <button id="cmode-auto" onclick="setCalibMode('auto',this)" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--dim);cursor:pointer">AUTO</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);margin-bottom:3px">CYCLE TIME (s)</div>
+        <input id="acq-cycle-time" type="number" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)" value="600">
+      </div>
+      <div>
+        <div style="display:flex;gap:4px;margin-bottom:2px">
+          <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim)">VTH_T1</div>
+          <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim)">VTH_T2</div>
+          <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim)">VTH_E</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <input id="acq-vth-t1" type="number" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)" value="50">
+          <input id="acq-vth-t2" type="number" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)" value="0">
+          <input id="acq-vth-e"  type="number" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)" value="0">
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button class="btn btn-save" id="acq-save-cfg" onclick="saveAcqConfig()" style="font-size:10px;padding:5px 14px">SAVE TO CONFIG</button>
+      <button class="btn" onclick="saveAsAutostart()" style="font-size:10px;padding:5px 14px;border-color:var(--accent);color:var(--accent)" title="Save current settings as auto-start configuration">SAVE AS AUTOSTART</button>
+      <label style="display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);cursor:pointer">
+        <input type="checkbox" id="autostart-enabled" onchange="toggleAutostartEnabled(this)" style="width:13px;height:13px;cursor:pointer">
+        AUTO ON REBOOT
+      </label>
+      <label id="mcu-toggle-label" style="display:none;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);cursor:pointer;margin-left:8px">
+        <input type="checkbox" id="mcu-monitor-enabled" onchange="toggleMcuMonitor(this)" style="width:13px;height:13px;cursor:pointer" checked>
+        MCU MON
+      </label>
+      <button id="fmt-text" onclick="setOutputFmt('textCompact',this)"
+        style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 10px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:#0c0e13;cursor:pointer;font-weight:bold">TEXT</button>
+      <button id="fmt-binary" onclick="setOutputFmt('binaryCompact',this)"
+        style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--dim);cursor:pointer">BINARY</button>
+    </div>
+
+    <!-- 4 independent action buttons -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <button class="ctrl-btn btn-blue"  id="ps-temp-stable" onclick="acqAction('temp_stable')">① TEMP STABLE</button>
+      <button class="ctrl-btn btn-blue"  id="ps-calibrate"   onclick="acqAction('calibrate')">② CALIBRATE</button>
+      <button class="ctrl-btn btn-green" id="ps-acq-start"   onclick="acqAction('start')">③ START ACQ</button>
+      <button class="ctrl-btn btn-red"   id="ps-acq-stop"    onclick="acqAction('stop')" disabled>④ STOP</button>
+    </div>
+
+    <!-- Sequence builder -->
+    <div style="border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:10px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);font-weight:bold;letter-spacing:.06em;margin-bottom:8px">RUN SEQUENCE</div>
+      <div style="display:flex;gap:20px;margin-bottom:10px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg);cursor:pointer">
+          <input type="checkbox" id="seq-temp" style="width:14px;height:14px;cursor:pointer"> ① Temp Stable
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg);cursor:pointer">
+          <input type="checkbox" id="seq-cal" style="width:14px;height:14px;cursor:pointer"> ② Calibrate
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg);cursor:pointer">
+          <input type="checkbox" id="seq-acq" checked style="width:14px;height:14px;cursor:pointer"> ③ Acquire
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="ctrl-btn btn-green" id="ps-seq-start" onclick="startSequence()" style="min-width:150px">▶ START SEQUENCE</button>
+        <span id="seqStepLabel" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent)"></span>
+      </div>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);margin-top:2px">
+      CYCLE: <span id="acqCycleLabel" style="color:var(--fg)">—</span>
+      &nbsp;&nbsp; CALIB: <span id="acqCalibLabel" style="color:var(--ok)">—</span>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);margin-top:2px">
+      FILE: <span id="acqFilenameLabel" style="color:var(--accent)">—</span>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);letter-spacing:.06em">OUTPUT LOG</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="autoScrollBtn" onclick="toggleAutoScroll()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 8px;background:var(--ok);border:none;border-radius:3px;color:#0c0e13;cursor:pointer;font-weight:bold">AUTO-SCROLL ON</button>
+      <button onclick="clearPetsysLog()" style="font-family:'JetBrains Mono',monospace;font-size:10px;background:none;border:none;color:var(--dim);cursor:pointer">[clear]</button>
+    </div>
+  </div>
+  <div id="petsysLog" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;height:calc(100vh - 640px);min-height:120px;overflow-y:auto;white-space:pre;overflow-x:auto"></div>
+</div>
+
+<div class="panel-overlay" id="alarmsOverlay" onclick="closeAlarmsPanel()"></div>
+<div class="panel wide" id="alarmsPanel">
+  <h2>⚑ Alarms &amp; Notifications</h2>
+
+  <!-- Top row: Sound + Email + Test -->
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+    <button id="alarmSoundBtn" onclick="alarmToggleSound()"
+      style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 14px;border-radius:3px;cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--dim)">
+      SOUND OFF</button>
+    <button id="alarmEmailBtn" onclick="alarmToggleEmail()"
+      style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 14px;border-radius:3px;cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--dim)">
+      EMAIL OFF</button>
+    <button onclick="alarmTestEmail()"
+      style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 14px;border:1px solid var(--accent);border-radius:3px;background:var(--bg);color:var(--accent);cursor:pointer">
+      ✉ TEST EMAIL</button>
+    <span id="alarmTestStatus" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)"></span>
+  </div>
+
+  <!-- 3) Email list -->
+  <div class="panel-section">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0">EMAIL RECIPIENTS</h3>
+      <button onclick="toggleAlarmSection('emailSection',this)"
+        style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--accent);cursor:pointer">EDIT</button>
+    </div>
+    <div id="emailSection" style="display:none;margin-top:8px">
+      <div id="emailListContainer" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <input id="newEmailInput" type="email" placeholder="new@email.com"
+          style="flex:1;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg)">
+        <button onclick="alarmAddEmail()"
+          style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px 10px;border:1px solid var(--ok);border-radius:3px;background:var(--bg);color:var(--ok);cursor:pointer">ADD</button>
+      </div>
+      <button onclick="alarmSaveEmails()" class="btn-save" style="margin-top:8px">SAVE</button>
+      <div id="emailSaveStatus" style="font-family:'JetBrains Mono',monospace;font-size:10px;margin-top:4px;min-height:14px"></div>
+    </div>
+  </div>
+
+  <!-- 4) Thresholds -->
+  <div class="panel-section">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0">ALARM THRESHOLDS</h3>
+      <button onclick="toggleAlarmSection('threshSection',this)"
+        style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--accent);cursor:pointer">EDIT</button>
+    </div>
+    <div id="threshSection" style="display:none;margin-top:8px">
+      <div id="alarmThreshContent">Loading…</div>
+      <button onclick="alarmSaveThresholds()" class="btn-save" style="margin-top:8px">SAVE</button>
+      <div id="alarmThreshStatus" style="font-family:'JetBrains Mono',monospace;font-size:10px;margin-top:4px;min-height:14px"></div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px">
+    <button class="btn-cancel" onclick="closeAlarmsPanel()">CLOSE</button>
+  </div>
+</div>
+
+<div class="panel-overlay" id="panelOverlay" onclick="closePanel()"></div>
+<div class="panel" id="threshPanel">
+  <h2>Alarm Thresholds</h2>
+  <div id="panelContent">Loading…</div>
+  <div class="panel-actions">
+    <button class="btn-save" onclick="saveThresholds()">Save</button>
+    <button class="btn-cancel" onclick="closePanel()">Cancel</button>
+  </div>
+  <div class="save-status" id="saveStatus"></div>
+</div>
+
+<script src="/js/chart.umd.min.js"></script>
+<script src="/js/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="/js/chartjs-plugin-zoom.min.js"></script>
+
+<script>
+var API = window.location.origin;
+var POLL_MS = 5000;
+var STALE_MS = 15000;
+var timeRangeMin = 60;
+var FILE_THRESHOLD = 60; // ranges > this use /filehistory instead of /history
+
+var lastData = {};
+var configCache = null;
+var muted = false;
+var audioCtx = null;
+var pendingFileFetch = false;
+
+var SENSOR_COLORS = ['#4fc3f7','#66bb6a','#ce93d8','#ffa726','#ef5350','#26c6da','#ffee58','#ab47bc','#8d6e63','#78909c'];
+var sensorColorMap = {};
+function getSensorColor(sid) {
+  if (!sensorColorMap[sid]) { var idx = Object.keys(sensorColorMap).length; sensorColorMap[sid] = SENSOR_COLORS[idx % SENSOR_COLORS.length]; }
+  return sensorColorMap[sid];
+}
+
+function beepAlarm() {
+  if (isMuted) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    [660,880].forEach(function(freq,i) {
+      var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type='square'; osc.frequency.value=freq; gain.gain.value=0.08;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      var t = audioCtx.currentTime + i*0.15; osc.start(t); osc.stop(t+0.1);
+    });
+  } catch(e){}
+}
+function toggleMute() {
+  isMuted = !isMuted;
+  var btn = document.getElementById('muteBtn');
+  if (btn) { btn.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON'; }
+  updateAlarmSoundBtn();
+}
+
+function setTimeRange(minutes, el) {
+  timeRangeMin = minutes;
+  document.querySelectorAll('.time-btn[data-minutes]').forEach(function(b){b.classList.remove('active')});
+  el.classList.add('active');
+  // Reset history cache so full history is reloaded for new range
+  historyCache = null;
+  lastHistoryTs = null;
+  fileHistoryCache = null;
+  // Reset zoom on ALL charts so stale pan/zoom state doesn't shift the axis
+  getAllCharts().forEach(function(c){ if(c) c.resetZoom(); });
+  updateDiskChart();
+  if (minutes > FILE_THRESHOLD) {
+    fetchFileHistory(minutes);
+  }
+}
+
+function getAlarmFields(d) {
+  if (!d.alarm || d.alarm.length===0) return [];
+  var f=[];
+  d.alarm.forEach(function(a){
+    if(a.startsWith('temp'))f.push('temp');
+    if(a.startsWith('hum'))f.push('hum');
+    if(a.startsWith('press'))f.push('press');
+    if(a.startsWith('asic_'))f.push(a.split('>')[0].split('<')[0]);
+    if(a.startsWith('disk_free'))f.push('disk_free_pct');
+    if(a.startsWith('file>'))f.push('file_size');
+  });
+  return f;
+}
+
+function makeCard(id, d) {
+  var card = document.createElement('div');
+  card.className='card'; card.id='card-'+id;
+  var af=getAlarmFields(d), hasAlarm=af.length>0;
+  var isDc = d.status==='error' && d.error && d.error.includes('not responding');
+  var rHTML='';
+  if (isDc) { rHTML='<div class="disconnected-msg">NOT CONNECTED</div>'; card.classList.add('disconnected'); }
+  else if (d.status==='error') { rHTML='<div class="error-msg">READ ERROR: '+(d.error||'unknown')+'</div>'; card.classList.add('error'); }
+  else {
+    if (hasAlarm) card.classList.add('alarm');
+    var tA=af.includes('temp')?' alarmed':'', hA=af.includes('hum')?' alarmed':'', pA=af.includes('press')?' alarmed':'';
+    rHTML+='<div class="reading temp'+tA+'"><div class="label">Temp</div><div class="value">'+(d.temp!=null?d.temp.toFixed(2):'\u2014')+'<span class="unit">\u00B0C</span></div></div>';
+    rHTML+='<div class="reading hum'+hA+'"><div class="label">Hum</div><div class="value">'+(d.hum!=null?d.hum.toFixed(2):'\u2014')+'<span class="unit">%</span></div></div>';
+    if (d.type==='BME280') {
+      rHTML+='<div class="reading press'+pA+'"><div class="label">Press</div><div class="value">'+(d.press!=null?d.press.toFixed(3):'\u2014')+'<span class="unit">kPa</span></div></div>';
+    }
+    if (d.type==='HWT905') {
+      rHTML='<div style="min-height:100px">';
+      var txA=af.includes('tilt_x')?' alarmed':'', tyA=af.includes('tilt_y')?' alarmed':'';
+      var mxA=af.includes('mag_x')?' alarmed':'', myA=af.includes('mag_y')?' alarmed':'', mzA=af.includes('mag_z')?' alarmed':'';
+      // Line 1: Tilt
+      rHTML+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+      rHTML+='<div class="reading'+txA+'"><div class="label">TILT X</div><div class="value" style="color:var(--temp-clr)">'+(d.tilt_x!=null?d.tilt_x.toFixed(3):'\u2014')+'<span class="unit">\u00B0</span></div></div>';
+      rHTML+='<div class="reading'+tyA+'"><div class="label">TILT Y</div><div class="value" style="color:var(--temp-clr)">'+(d.tilt_y!=null?d.tilt_y.toFixed(3):'\u2014')+'<span class="unit">\u00B0</span></div></div>';
+      // Magnetic heading from atan2(mag_y, mag_x)
+      var heading = null;
+      if (d.mag_x != null && d.mag_y != null) {
+        heading = Math.atan2(d.mag_y, d.mag_x) * 180 / Math.PI;
+        if (heading < 0) heading += 360;
+      }
+      rHTML+='</div>';
+      // Line 2: Mag + Heading
+      rHTML+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      rHTML+='<div class="reading'+mxA+'"><div class="label">MAG X</div><div class="value" style="color:var(--press-clr)">'+(d.mag_x!=null?Math.round(d.mag_x):'\u2014')+'<span class="unit">\u00B5T</span></div></div>';
+      rHTML+='<div class="reading'+myA+'"><div class="label">MAG Y</div><div class="value" style="color:var(--press-clr)">'+(d.mag_y!=null?Math.round(d.mag_y):'\u2014')+'<span class="unit">\u00B5T</span></div></div>';
+      rHTML+='<div class="reading'+mzA+'"><div class="label">MAG Z</div><div class="value" style="color:var(--press-clr)">'+(d.mag_z!=null?Math.round(d.mag_z):'\u2014')+'<span class="unit">\u00B5T</span></div></div>';
+      rHTML+='<div class="reading"><div class="label">HEADING</div><div class="value" style="color:var(--hum-clr)">'+(heading!=null?heading.toFixed(1):'\u2014')+'<span class="unit">\u00B0</span></div></div>';
+      rHTML+='</div></div>';
+    }
+    if (d.type==='A1Temp') {
+      rHTML='';
+      var ASIC_COLORS=['#ff7043','#ffca28','#ab47bc','#26c6da','#8d6e63','#78909c','#66bb6a','#ef5350'];
+      var asicKeys=Object.keys(d).filter(function(k){return k.startsWith('asic_')}).sort();
+      asicKeys.forEach(function(k,i){
+        var num=k.replace('asic_','');
+        var alarmed=af.includes(k)?' alarmed':'';
+        var clr=ASIC_COLORS[i%ASIC_COLORS.length];
+        rHTML+='<div class="reading'+alarmed+'"><div class="label">Layer '+num+'</div>'
+          +'<div class="value" style="color:'+clr+'">'+(d[k]!=null?d[k].toFixed(2):'\u2014')+'<span class="unit">\u00B0C</span></div></div>';
+      });
+      if(asicKeys.length===0) rHTML='<div class="disconnected-msg">NO DATA</div>';
+    }
+    if (d.type==='LinuxTemp') {
+      rHTML='';
+      var zoneKeys=Object.keys(d).filter(function(k){
+        return k!=='label'&&k!=='type'&&k!=='status'&&k!=='timestamp'&&k!=='alarm';
+      }).sort();
+      var ZONE_COLORS=['#4fc3f7','#66bb6a','#ffa726','#ce93d8','#ef5350'];
+      zoneKeys.forEach(function(k,i){
+        var alarmed=af.includes(k)?' alarmed':'';
+        var clr=ZONE_COLORS[i%ZONE_COLORS.length];
+        rHTML+='<div class="reading'+alarmed+'"><div class="label">'+k.replace(/_/g,' ')+'</div>'
+          +'<div class="value" style="color:'+clr+'">'+(d[k]!=null?d[k].toFixed(1):'\u2014')+'<span class="unit">\u00B0C</span></div></div>';
+      });
+      if(zoneKeys.length===0) rHTML='<div class="disconnected-msg">NO DATA</div>';
+    }
+    if (d.type==='SysHealth') {
+      rHTML='';
+      var diskPct = d.disk_free_pct != null ? d.disk_free_pct : null;
+      var diskGb  = d.disk_free_gb  != null ? d.disk_free_gb  : null;
+      var ramUsed = d.ram_free_MB   != null ? d.ram_free_MB   : null;
+      var ramTotal= d.ram_total_MB  != null ? d.ram_total_MB  : null;
+      var diskClr = diskPct == null ? 'var(--dim)'
+                  : diskPct <= 5  ? 'var(--err)'
+                  : diskPct <= 20 ? 'var(--warn)'
+                  : 'var(--ok)';
+      var diskAlarmed = af.some(function(a){return a.startsWith('disk_free')}) ? ' alarmed' : '';
+      rHTML += '<div class="reading'+diskAlarmed+'">'
+             + '<div class="label">DISK FREE</div>'
+             + '<div class="value" style="color:'+diskClr+'">'
+             + (diskPct!=null ? diskPct.toFixed(1) : '\u2014')
+             + '<span class="unit">%</span></div></div>';
+      if (diskGb != null) {
+        rHTML += '<div class="reading"><div class="label">FREE GB</div>'
+               + '<div class="value" style="color:'+diskClr+'">'
+               + diskGb.toFixed(0)+'<span class="unit">GB</span></div></div>';
+      }
+      if (ramUsed != null) {
+        var ramPct = ramTotal ? Math.round(100*ramUsed/ramTotal) : null;
+        var ramClr = ramPct == null ? 'var(--dim)'
+                   : ramPct >= 90 ? 'var(--err)'
+                   : ramPct >= 70 ? 'var(--warn)'
+                   : 'var(--hum-clr)';
+        rHTML += '<div class="reading"><div class="label">RAM FREE</div>'
+               + '<div class="value" style="color:'+ramClr+'">'
+               + (ramUsed/1024).toFixed(1)+'<span class="unit">GB</span></div></div>';
+        if (ramTotal) {
+          rHTML += '<div class="reading"><div class="label">RAM TOTAL</div>'
+                 + '<div class="value" style="color:var(--dim)">'
+                 + (ramTotal/1024).toFixed(0)+'<span class="unit">GB</span></div></div>';
+        }
+      }
+    }
+  }
+  var ab=hasAlarm?'<span class="alarm-badge">ALARM</span>':'';
+  var clr=getSensorColor(id);
+  var dot='<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+clr+';margin-right:5px;vertical-align:middle"></span>';
+  var ts=d.timestamp?new Date(d.timestamp).toLocaleTimeString():'\u2014';
+  card.innerHTML='<div class="card-head"><span class="name">'+dot+(d.label||id)+'</span><div class="badges">'+ab+'<span class="badge">'+(d.type||'?')+'</span></div></div><div class="readings">'+rHTML+'</div><div class="card-foot">last: '+ts+'<span class="flash-dot"></span></div>';
+  return card;
+}
+
+function updateGrid(data) {
+  var grid=document.getElementById('sensorGrid');
+  var ids=Object.keys(data).filter(function(k){
+    return k === '__system__' || !k.startsWith('__');
+  });
+  if (grid.children.length!==ids.length) { grid.innerHTML=''; ids.forEach(function(id){grid.appendChild(makeCard(id,data[id]))}); }
+  else { ids.forEach(function(id){ var old=document.getElementById('card-'+id), fresh=makeCard(id,data[id]); if(old)old.replaceWith(fresh);else grid.appendChild(fresh); }); }
+  var now=Date.now();
+  ids.forEach(function(id){ var d=data[id]; if(d.timestamp){var age=now-new Date(d.timestamp).getTime();var el=document.getElementById('card-'+id);if(el&&age>STALE_MS&&!el.classList.contains('alarm'))el.classList.add('stale');} });
+  var alarmed=ids.filter(function(id){return data[id].alarm&&data[id].alarm.length>0});
+  var banner=document.getElementById('alarmBanner'),bt=document.getElementById('alarmText');
+  if(alarmed.length>0){bt.textContent='\u26A0 ALARM \u2014 '+alarmed.map(function(id){return data[id].label+': '+data[id].alarm.join(', ')}).join('  |  ');banner.classList.add('show');beepAlarm();}
+  else{banner.classList.remove('show');}
+}
+
+// ── Charts ──
+var chartTemp=null, chartHum=null, chartPress=null, chartAngles=null, chartMag=null, chartAsic=null, chartLinux=null, chartDisk=null;
+var fileHistoryCache = null; // cached file history data
+var historyCache = null;    // cached in-memory history
+var lastHistoryTs = null;   // timestamp of last received history point
+
+function getTimeUnit(m){if(m<=120)return'minute';return'hour'}
+function getTimeFormat(m){if(m<=120)return{minute:'HH:mm'};return{hour:'MMM d HH:mm'}}
+function getMaxTicks(m){return 12}
+
+function makeChartOpts() {
+  return {
+    responsive:true, maintainAspectRatio:false,
+    animation:{duration:0},
+    elements:{point:{radius:0,hitRadius:8},line:{borderWidth:1.5}},
+    scales:{
+      x:{type:'time',time:{unit:getTimeUnit(timeRangeMin),displayFormats:getTimeFormat(timeRangeMin),tooltipFormat:'yyyy-MM-dd HH:mm:ss'},
+        grid:{color:'rgba(30,34,48,.8)'},ticks:{color:'#5a6070',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12}},
+      y:{grid:{color:'rgba(30,34,48,.8)'},ticks:{color:'#5a6070',font:{family:'JetBrains Mono',size:9}}}
+    },
+    plugins:{
+      legend:{display:false},
+      tooltip:{mode:'nearest',intersect:true,titleFont:{family:'JetBrains Mono',size:10},bodyFont:{family:'JetBrains Mono',size:10},backgroundColor:'#14171e',borderColor:'#1e2230',borderWidth:1},
+      zoom:{
+        pan:{enabled:false},
+        zoom:{
+          wheel:{enabled:false},
+          drag:{enabled:true,backgroundColor:'rgba(79,195,247,0.25)',borderColor:'rgba(79,195,247,0.8)',borderWidth:1,modifierKey:'ctrl'},
+          mode:'xy'
+        }
+      }
+    },
+    interaction:{mode:'nearest',intersect:true}
+  };
+}
+
+function initCharts() {
+  chartTemp=new Chart(document.getElementById('chartTemp').getContext('2d'),{type:'line',data:{datasets:[]},options:makeChartOpts()});
+  chartHum=new Chart(document.getElementById('chartHum').getContext('2d'),{type:'line',data:{datasets:[]},options:makeChartOpts()});
+  chartPress=new Chart(document.getElementById('chartPress').getContext('2d'),{type:'line',data:{datasets:[]},options:makeChartOpts()});
+  chartAngles=new Chart(document.getElementById('chartAngles').getContext('2d'),{type:'line',data:{datasets:[]},options:makeChartOpts()});
+  chartMag=new Chart(document.getElementById('chartMag').getContext('2d'),{type:'line',data:{datasets:[]},options:makeChartOpts()});
+  chartAsic=new Chart(document.getElementById('chartAsic').getContext('2d'),{type:'line',data:{datasets:[]},options:makeChartOpts()});
+  chartLinux=new Chart(document.getElementById('chartLinux').getContext('2d'),{type:'line',data:{datasets:[]},options:makeChartOpts()});
+  chartDisk=new Chart(document.getElementById('chartDisk').getContext('2d'),{
+    type:'line',data:{datasets:[]},
+    options: (function(){
+      var o = makeChartOpts();
+      o.scales.y = o.scales.y || {};
+      o.scales.y.min = 0; o.scales.y.max = 100;
+      o.scales.y.title = {display:true, text:'Disk Free %', color:'#4fc3f7', font:{size:9}};
+      o.scales.y1 = {
+        type:'linear', position:'right',
+        min: 0,
+        grid: {drawOnChartArea: false},
+        ticks: {color:'#a5d6a7', font:{size:9}},
+        title: {display:true, text:'RAM GB', color:'#a5d6a7', font:{size:9}}
+      };
+      return o;
+    })()
+  });
+
+  // Fix devicePixelRatio coordinate bug in chartjs-plugin-zoom
+  // Patches mousedown, mousemove and mouseup so both the rectangle
+  // drawing AND the actual zoom calculation use correct coordinates
+  var dpr = window.devicePixelRatio || 1;
+  if (dpr !== 1) {
+    getAllCharts().forEach(function(chart) {
+      if (!chart) return;
+      function patchEvent(e) {
+        var rect = chart.canvas.getBoundingClientRect();
+        var correctY = (e.clientY - rect.top) * (chart.canvas.height / rect.height / dpr);
+        var correctX = (e.clientX - rect.left) * (chart.canvas.width / rect.width / dpr);
+        Object.defineProperty(e, 'offsetY', { get: function(){ return correctY; }, configurable: true });
+        Object.defineProperty(e, 'offsetX', { get: function(){ return correctX; }, configurable: true });
+      }
+      ['mousedown','mousemove','mouseup'].forEach(function(evt) {
+        chart.canvas.addEventListener(evt, patchEvent, true);
+      });
+    });
+  }
+
+  // Double-click to reset zoom
+  var chartMap={chartTemp:chartTemp,chartHum:chartHum,chartPress:chartPress,chartAngles:chartAngles,chartMag:chartMag,chartAsic:chartAsic,chartLinux:chartLinux,chartDisk:chartDisk};
+  Object.keys(chartMap).forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('dblclick',function(){
+      chartMap[id].resetZoom(); checkZoomState();
+    });
+  });
+}
+
+function getAllCharts() { return [chartTemp, chartHum, chartPress, chartAngles, chartMag, chartAsic, chartLinux, chartDisk]; }
+
+function isAnyChartZoomed() {
+  return getAllCharts().some(function(c) {
+    if (!c || !c.scales || !c.scales.x) return false;
+    return c.isZoomedOrPanned();
+  });
+}
+
+function checkZoomState() {
+  var el = document.getElementById('panControls');
+  if (isAnyChartZoomed()) { el.classList.add('show'); }
+  else { el.classList.remove('show'); }
+}
+
+// Check zoom state periodically (after wheel zoom events)
+setInterval(checkZoomState, 500);
+
+function panCharts(fraction) {
+  // Pan all charts by a fraction of their visible range
+  getAllCharts().forEach(function(c) {
+    if (!c || !c.scales || !c.scales.x) return;
+    var xScale = c.scales.x;
+    var range = xScale.max - xScale.min;
+    var delta = range * fraction;
+    c.pan({x: -delta}, undefined, 'default');
+    // Manual pan: adjust scale limits directly
+    c.options.scales.x.min = xScale.min + delta;
+    c.options.scales.x.max = xScale.max + delta;
+    c.update('none');
+  });
+}
+
+function resetAllZoom() {
+  getAllCharts().forEach(function(c) { c.resetZoom(); });
+  checkZoomState();
+}
+
+function updateCharts(historyData) {
+  if (!historyData||historyData.length===0) return;
+  var now = new Date();
+  var cutoff=new Date(now - timeRangeMin*60*1000);
+
+  // Enforce the time window only on charts NOT currently zoomed by the user
+  var xMin = cutoff.getTime();
+  var xMax = now.getTime();
+  getAllCharts().forEach(function(c){
+    if(!c) return;
+    try { if(c.isZoomedOrPanned()) return; } catch(e) {}
+    c.options.scales.x.min = xMin;
+    c.options.scales.x.max = xMax;
+    c.options.scales.x.time.unit = getTimeUnit(timeRangeMin);
+    c.options.scales.x.time.displayFormats = getTimeFormat(timeRangeMin);
+  });
+  var filtered=historyData.filter(function(p){return new Date(p[0])>=cutoff});
+
+  // Even if filtered is empty, clear IMU/ASIC charts so they don't show stale data
+  if (filtered.length===0) {
+    chartAngles.data.datasets=[]; chartAngles.update('none');
+    chartMag.data.datasets=[];    chartMag.update('none');
+    chartAsic.data.datasets=[];   chartAsic.update('none');
+    chartLinux.data.datasets=[];  chartLinux.update('none');
+    return;
+  }
+
+  // Extract RAM used history from __sys__ points
+  var ramTotalMB = 0;
+  ramHistory = filtered
+    .filter(function(p){ return p[1].__sys__ && p[1].__sys__.ram_free_MB != null; })
+    .map(function(p){
+      if (p[1].__sys__.ram_total_MB) ramTotalMB = p[1].__sys__.ram_total_MB;
+      return {x: new Date(p[0]), y: +(p[1].__sys__.ram_free_MB/1024).toFixed(1)};
+    });
+  if (ramTotalMB > 0 && chartDisk) {
+    chartDisk.options.scales.y1.max = Math.ceil(ramTotalMB/1024);
+  }
+
+  var allSids=new Set();
+  filtered.forEach(function(p){Object.keys(p[1]).forEach(function(s){
+    if (!s.startsWith('__')) allSids.add(s);
+  })});
+  var sids=Array.from(allSids);
+
+  var tempD={},humD={},pressD={},hasP={};
+  // IMU data: tilt and mag per component
+  var tiltXD=[],tiltYD=[],magXD=[],magYD=[],magZD=[];
+  var hasIMU=false;
+  // ASIC temperature data: asic_0 … asic_N per sensor id
+  var asicD={};  // asicD[sid][asic_key] = [{x,y},...]
+  var hasAsic=false;
+  sids.forEach(function(s){tempD[s]=[];humD[s]=[];pressD[s]=[]});
+
+  filtered.forEach(function(point){
+    var ts=new Date(point[0]),r=point[1];
+    sids.forEach(function(sid){
+      var d=r[sid];
+      if(d){
+        if(d.temp!=null){tempD[sid].push({x:ts,y:d.temp})}
+        if(d.hum!=null){humD[sid].push({x:ts,y:d.hum})}
+        if(d.press!=null){pressD[sid].push({x:ts,y:d.press});hasP[sid]=true;}
+        if(d.tilt_x!=null){tiltXD.push({x:ts,y:d.tilt_x});hasIMU=true;}
+        if(d.tilt_y!=null){tiltYD.push({x:ts,y:d.tilt_y})}
+        if(d.mag_x!=null){magXD.push({x:ts,y:d.mag_x})}
+        if(d.mag_y!=null){magYD.push({x:ts,y:d.mag_y})}
+        if(d.mag_z!=null){magZD.push({x:ts,y:d.mag_z})}
+        // Collect ASIC temperatures (keys: asic_0, asic_1, ...)
+        Object.keys(d).forEach(function(k){
+          if(k.startsWith('asic_')){
+            if(!asicD[sid]) asicD[sid]={};
+            if(!asicD[sid][k]) asicD[sid][k]=[];
+            asicD[sid][k].push({x:ts,y:d[k]});
+            hasAsic=true;
+          }
+          // Collect LinuxTemp zones — add to tempD with composite key
+          var sidType=(lastData[sid]&&lastData[sid].type)||
+                      (configCache&&configCache.sensors&&configCache.sensors[sid]&&configCache.sensors[sid].type);
+          if(sidType==='LinuxTemp'&&
+             k!=='label'&&k!=='type'&&k!=='status'&&k!=='timestamp'&&k!=='alarm'&&
+             typeof d[k]==='number'){
+            var zkey=sid+'__'+k;
+            if(!tempD[zkey]) tempD[zkey]=[];
+            tempD[zkey].push({x:ts,y:d[k]});
+          }
+        });
+      }
+    });
+  });
+
+  // envSids: regular sensors with temp data (exclude LinuxTemp composite keys)
+  var envSids=Object.keys(tempD).filter(function(s){
+    return tempD[s]&&tempD[s].length>0&&s.indexOf('__')<0;
+  });
+
+  function getLabel(sid){
+    // Handle LinuxTemp composite keys like "Linux_CPU__x86_pkg_temp"
+    if(sid.indexOf('__')>=0){
+      var parts=sid.split('__');
+      var baseSid=parts[0]; var zone=parts[1].replace(/_/g,' ');
+      var baseLabel=(lastData[baseSid]&&lastData[baseSid].label)?lastData[baseSid].label:baseSid;
+      return baseLabel+' '+zone;
+    }
+    return(lastData[sid]&&lastData[sid].label)?lastData[sid].label:sid;
+  }
+  function makeDS(dataMap,sidList){
+    return sidList.map(function(sid){return{label:getLabel(sid),data:dataMap[sid],borderColor:getSensorColor(sid),backgroundColor:getSensorColor(sid)+'20',tension:.3,fill:false}});
+  }
+
+  var unit=getTimeUnit(timeRangeMin),fmt=getTimeFormat(timeRangeMin);
+  getAllCharts().forEach(function(c){
+    c.options.scales.x.time.unit=unit;c.options.scales.x.time.displayFormats=fmt;
+  });
+
+  chartTemp.data.datasets=makeDS(tempD,envSids); chartTemp.update('none');
+  chartHum.data.datasets=makeDS(humD,envSids); chartHum.update('none');
+
+  var pSids=envSids.filter(function(s){return hasP[s]});
+  chartPress.data.datasets=makeDS(pressD,pSids);
+  if(pSids.length>0){
+    var vals=[];pSids.forEach(function(s){pressD[s].forEach(function(p){vals.push(p.y)})});
+    if(vals.length>0){var mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);
+      if(mx-mn<1.0){var mid=(mx+mn)/2;chartPress.options.scales.y.min=mid-.5;chartPress.options.scales.y.max=mid+.5;}
+      else{delete chartPress.options.scales.y.min;delete chartPress.options.scales.y.max;}}
+  }
+  chartPress.update('none');
+
+  // Euler angles chart — always update (clears if no data in window)
+  chartAngles.data.datasets = hasIMU ? [
+    {label:'Tilt X',data:tiltXD,borderColor:'#4fc3f7',backgroundColor:'#4fc3f720',tension:.3,fill:false},
+    {label:'Tilt Y',data:tiltYD,borderColor:'#66bb6a',backgroundColor:'#66bb6a20',tension:.3,fill:false}
+  ] : [];
+  chartAngles.update('none');
+
+  chartMag.data.datasets = hasIMU ? [
+    {label:'Mag X',data:magXD,borderColor:'#ef5350',backgroundColor:'#ef535020',tension:.3,fill:false},
+    {label:'Mag Y',data:magYD,borderColor:'#ce93d8',backgroundColor:'#ce93d820',tension:.3,fill:false},
+    {label:'Mag Z',data:magZD,borderColor:'#26c6da',backgroundColor:'#26c6da20',tension:.3,fill:false}
+  ] : [];
+  chartMag.update('none');
+
+  if(hasIMU){
+    updateLegend('legendAngles',['_ty','_tz'],{_ty:'Tilt Y',_tz:'Tilt Z'},{_ty:'#4fc3f7',_tz:'#66bb6a'});
+    updateLegend('legendMag',['_mag_x','_mag_y','_mag_z'],{_mag_x:'Mag X',_mag_y:'Mag Y',_mag_z:'Mag Z'},{_mag_x:'#ef5350',_mag_y:'#ce93d8',_mag_z:'#26c6da'});
+  }
+
+  // ── ASIC temperatures — always update ──
+  if(hasAsic){
+    var ASIC_COLORS=['#ff7043','#ffca28','#ab47bc','#26c6da','#8d6e63','#78909c','#66bb6a','#ef5350'];
+    var asicDatasets=[];
+    var asicLabelKeys=[];
+    var asicLabelMap={};
+    var asicColorMap={};
+    var colorIdx=0;
+    Object.keys(asicD).forEach(function(sid){
+      var sensorLabel=(lastData[sid]&&lastData[sid].label)?lastData[sid].label:sid;
+      Object.keys(asicD[sid]).sort().forEach(function(k){
+        var asicNum=k.replace('asic_','');
+        var label='Layer '+asicNum;
+        var clr=ASIC_COLORS[colorIdx%ASIC_COLORS.length]; colorIdx++;
+        asicDatasets.push({label:label,data:asicD[sid][k],borderColor:clr,backgroundColor:clr+'20',tension:.3,fill:false});
+        asicLabelKeys.push(k+'_'+sid);
+        asicLabelMap[k+'_'+sid]=label;
+        asicColorMap[k+'_'+sid]=clr;
+      });
+    });
+    chartAsic.data.datasets=asicDatasets;
+    updateLegend('legendAsic',asicLabelKeys,asicLabelMap,asicColorMap);
+  } else {
+    chartAsic.data.datasets=[];
+  }
+  chartAsic.update('none');
+
+  // ── Linux CPU temperatures ──
+  var LINUX_COLORS=['#4fc3f7','#66bb6a','#ffa726','#ce93d8','#ef5350'];
+  var linuxKeys=Object.keys(tempD).filter(function(k){return k.indexOf('__')>=0});
+  if(linuxKeys.length>0){
+    chartLinux.data.datasets=linuxKeys.map(function(k,i){
+      var parts=k.split('__');
+      var baseSid=parts[0]; var zone=parts[1].replace(/_/g,' ');
+      var baseLabel=(lastData[baseSid]&&lastData[baseSid].label)?lastData[baseSid].label:baseSid;
+      var clr=LINUX_COLORS[i%LINUX_COLORS.length];
+      return{label:baseLabel+' '+zone,data:tempD[k],borderColor:clr,
+             backgroundColor:clr+'20',tension:.3,fill:false};
+    });
+    var linuxLabelMap={}, linuxColorMap={};
+    linuxKeys.forEach(function(k,i){
+      var parts=k.split('__');
+      var bl=(lastData[parts[0]]&&lastData[parts[0]].label)||parts[0];
+      linuxLabelMap[k]=bl+' '+parts[1].replace(/_/g,' ');
+      linuxColorMap[k]=LINUX_COLORS[i%LINUX_COLORS.length];
+    });
+    updateLegend('legendLinux',linuxKeys,linuxLabelMap,linuxColorMap);
+  } else {
+    chartLinux.data.datasets=[];
+  }
+  chartLinux.update('none');
+
+  updateLegend('legendTemp',envSids);updateLegend('legendHum',envSids);updateLegend('legendPress',pSids);
+}
+
+function updateLegend(id,sids,labelOverride,colorOverride){
+  document.getElementById(id).innerHTML=sids.map(function(sid){
+    var l=labelOverride?labelOverride[sid]:((lastData[sid]&&lastData[sid].label)?lastData[sid].label:sid);
+    var c=colorOverride?colorOverride[sid]:getSensorColor(sid);
+    return'<span class="chart-legend-item"><span class="swatch" style="background:'+c+'"></span>'+l+'</span>';
+  }).join('');
+}
+
+// Fetch history from TSV files for longer ranges
+async function fetchFileHistory(minutes) {
+  if (pendingFileFetch) return;
+  pendingFileFetch = true;
+  try {
+    var r = await fetchWithTimeout(API+'/filehistory?minutes='+minutes, {}, 60000);
+    if (r.ok) {
+      fileHistoryCache = await r.json();
+      lastHistoryTs = fileHistoryCache.length > 0
+        ? fileHistoryCache[fileHistoryCache.length-1][0] : null;
+      // Use setTimeout to ensure the browser has fully processed the data
+      // before rendering — fixes invisible lines on long ranges
+      setTimeout(function() {
+        var now2 = new Date();
+        var cutoff2 = new Date(now2 - timeRangeMin*60*1000);
+        getAllCharts().forEach(function(c){
+          if(!c) return;
+          c.options.scales.x.min = cutoff2.getTime();
+          c.options.scales.x.max = now2.getTime();
+          c.options.scales.x.time.unit = getTimeUnit(timeRangeMin);
+          c.options.scales.x.time.displayFormats = getTimeFormat(timeRangeMin);
+          c.data.datasets = [];
+          c.update('none');
+        });
+        updateCharts(fileHistoryCache);
+      }, 50);
+    }
+  } catch(e) { console.error('filehistory fetch failed:', e); }
+  pendingFileFetch = false;
+}
+
+async function poll() {
+  var dot=document.getElementById('statusDot'),txt=document.getElementById('statusText');
+  try {
+    var dataRes = await fetchWithTimeout(API+'/data', {}, 10000);
+    if(!dataRes.ok)throw new Error(dataRes.status);
+    var data=await dataRes.json();
+    lastData=data;
+    // Update RAM history from __system__ live data
+    var sysD = data['__system__'] || {};
+    if (sysD.ram_free_MB != null) {
+      ramHistory.push({x: new Date(), y: +(sysD.ram_free_MB/1024).toFixed(1)});
+      if (sysD.ram_total_MB && chartDisk) {
+        chartDisk.options.scales.y1.max = Math.ceil(sysD.ram_total_MB/1024);
+      }
+    }
+    updateGrid(data);
+
+    // Fetch only new history points since last fetch (incremental)
+    if (timeRangeMin <= FILE_THRESHOLD) {
+      var url = lastHistoryTs
+        ? API+'/history?since='+encodeURIComponent(lastHistoryTs)
+        : API+'/history';
+      var histRes = await fetchWithTimeout(url, {}, 10000);
+      if(histRes.ok){
+        var newPts=await histRes.json();
+        if (newPts.length > 0) {
+          lastHistoryTs = newPts[newPts.length-1][0];
+          // Merge with cached history
+          if (!lastHistoryTs || !historyCache) {
+            historyCache = newPts;
+          } else {
+            historyCache = historyCache.concat(newPts);
+            // Trim to time range
+            var cutoff = new Date(Date.now() - timeRangeMin*60000);
+            historyCache = historyCache.filter(function(p){ return new Date(p[0]) >= cutoff; });
+          }
+          updateCharts(historyCache);
+        } else if (historyCache) {
+          updateCharts(historyCache);
+        }
+      }
+    } else if (fileHistoryCache) {
+      var url = lastHistoryTs
+        ? API+'/history?since='+encodeURIComponent(lastHistoryTs)
+        : API+'/history';
+      var histRes = await fetchWithTimeout(url, {}, 10000);
+      var newPts = [];
+      if(histRes.ok) {
+        newPts = await histRes.json();
+        if (newPts.length > 0) lastHistoryTs = newPts[newPts.length-1][0];
+      }
+      var fileEnd = fileHistoryCache.length > 0 ?
+        new Date(fileHistoryCache[fileHistoryCache.length-1][0]) : new Date(0);
+      var freshPts = newPts.filter(function(p){ return new Date(p[0]) > fileEnd; });
+      updateCharts(fileHistoryCache.concat(freshPts).sort(function(a,b){return a[0]<b[0]?-1:1}));
+    }
+
+    dot.className='dot live';
+    var sensorData = Object.fromEntries(Object.entries(data).filter(function(e){ return !e[0].startsWith('__'); }));
+    var n=Object.keys(sensorData).filter(function(k){return sensorData[k].status==='ok'}).length;
+    var total=Object.keys(sensorData).length;
+    var ac=Object.keys(sensorData).filter(function(k){return sensorData[k].alarm&&sensorData[k].alarm.length>0}).length;
+    var s=n+'/'+total+' sensors';
+    if(ac>0)s+=' \u00B7 '+ac+' alarm'+(ac>1?'s':'');
+    s+=' \u00B7 '+new Date().toLocaleTimeString();
+    txt.textContent=s;
+  } catch(e){dot.className='dot dead';txt.textContent='offline \u2014 '+e.message;}
+}
+
+// Periodically refresh file history for long-range views
+setInterval(function(){
+  if (timeRangeMin > FILE_THRESHOLD) fetchFileHistory(timeRangeMin);
+}, 30000); // every 30s
+
+// ── Graph visibility toggles ──
+var graphVisible = {temp:true, hum:true, press:true, tilt:true, mag:true, asic:true, linux:true, disk:true};
+var graphBoxMap  = {temp:'boxTemp', hum:'boxHum', press:'boxPress', tilt:'boxTilt', mag:'boxMag', asic:'boxAsic', linux:'boxLinux', disk:'boxDisk'};
+
+function toggleGraph(key, btn) {
+  graphVisible[key] = !graphVisible[key];
+  var box = document.getElementById(graphBoxMap[key]);
+  if (box) box.style.display = graphVisible[key] ? '' : 'none';
+  btn.classList.toggle('active', graphVisible[key]);
+}
+
+// ── Threshold panel ──
+async function fetchConfig(){try{var r=await fetchWithTimeout(API+'/config', {}, 5000);configCache=await r.json();return configCache}catch(e){return null}}
+function openPanel(){
+  document.getElementById('panelContent').textContent = 'Loading…';
+  document.getElementById('panelOverlay').classList.add('open');
+  document.getElementById('threshPanel').classList.add('open');
+  document.getElementById('threshBtn').classList.add('active');
+  fetchConfig().then(function(cfg){
+    if(!cfg){
+      document.getElementById('panelContent').textContent = 'Failed to load config — is kodaq running?';
+      return;
+    }
+    if(!cfg.sensors || Object.keys(cfg.sensors).length === 0){
+      document.getElementById('panelContent').textContent = 'Config loaded but no sensors found.';
+      return;
+    }
+    renderPanel(cfg);
+  });
+}
+function closePanel(){
+  document.getElementById('panelOverlay').classList.remove('open');
+  document.getElementById('threshPanel').classList.remove('open');
+  document.getElementById('threshBtn').classList.remove('active');
+  document.getElementById('saveStatus').textContent='';
+}
+function renderPanel(cfg){
+  var c=document.getElementById('panelContent'),alarms=cfg.alarms||{},sensors=cfg.sensors||{},html='';
+  for(var sid in sensors){
+    var scfg=sensors[sid],a=alarms[sid]||{},label=scfg.label||sid;
+    html+='<div class="panel-section"><h3>'+label+'</h3>';
+    if(scfg.type==='HWT905'){
+      ['tilt_x','tilt_y','mag_x','mag_y','mag_z'].forEach(function(p){
+        var unit=(p.startsWith('tilt'))?'\u00B0':'\u00B5T';
+        html+='<div class="threshold-row"><span class="t-label">'+p+' '+unit+'</span>'
+          +'<input type="number" step="0.1" id="'+sid+'_'+p+'_min" value="'+(a[p+'_min']!=null?a[p+'_min']:'')+'" placeholder="min">'
+          +'<span class="t-sep">\u2014</span>'
+          +'<input type="number" step="0.1" id="'+sid+'_'+p+'_max" value="'+(a[p+'_max']!=null?a[p+'_max']:'')+'" placeholder="max"></div>';
+      });
+    } else if(scfg.type==='A1Temp'){
+      var n=scfg.num_asics||4;
+      for(var ai=1;ai<=n;ai++){
+        var pk='asic_'+ai;
+        html+='<div class="threshold-row"><span class="t-label">ASIC '+ai+' \u00B0C</span>'
+          +'<input type="number" step="0.5" id="'+sid+'_'+pk+'_min" value="'+(a[pk+'_min']!=null?a[pk+'_min']:'')+'" placeholder="min">'
+          +'<span class="t-sep">\u2014</span>'
+          +'<input type="number" step="0.5" id="'+sid+'_'+pk+'_max" value="'+(a[pk+'_max']!=null?a[pk+'_max']:'')+'" placeholder="max"></div>';
+      }
+    } else {
+      html+='<div class="threshold-row"><span class="t-label">Temp \u00B0C</span>'
+        +'<input type="number" step="0.1" id="'+sid+'_temp_min" value="'+(a.temp_min!=null?a.temp_min:'')+'" placeholder="min">'
+        +'<span class="t-sep">\u2014</span>'
+        +'<input type="number" step="0.1" id="'+sid+'_temp_max" value="'+(a.temp_max!=null?a.temp_max:'')+'" placeholder="max"></div>'
+        +'<div class="threshold-row"><span class="t-label">Hum %</span>'
+        +'<input type="number" step="0.1" id="'+sid+'_hum_min" value="'+(a.hum_min!=null?a.hum_min:'')+'" placeholder="min">'
+        +'<span class="t-sep">\u2014</span>'
+        +'<input type="number" step="0.1" id="'+sid+'_hum_max" value="'+(a.hum_max!=null?a.hum_max:'')+'" placeholder="max"></div>';
+      if(scfg.type==='BME280'){
+        html+='<div class="threshold-row"><span class="t-label">Press kPa</span>'
+          +'<input type="number" step="0.1" id="'+sid+'_press_min" value="'+(a.press_min!=null?a.press_min:'')+'" placeholder="min">'
+          +'<span class="t-sep">\u2014</span>'
+          +'<input type="number" step="0.1" id="'+sid+'_press_max" value="'+(a.press_max!=null?a.press_max:'')+'" placeholder="max"></div>';
+      }
+    }
+    html+='</div>';
+  }
+  c.innerHTML=html;
+}
+async function saveThresholds(){
+  var status=document.getElementById('saveStatus');
+  if(!configCache){status.textContent='No config loaded';status.className='save-status err';return}
+  var alarms={};
+  for(var sid in configCache.sensors){
+    var stype=configCache.sensors[sid].type;
+    var a={},fields;
+    if(stype==='HWT905'){
+      fields=['tilt_x_min','tilt_x_max','tilt_y_min','tilt_y_max','mag_x_min','mag_x_max','mag_y_min','mag_y_max','mag_z_min','mag_z_max'];
+    } else if(stype==='A1Temp'){
+      var n=configCache.sensors[sid].num_asics||4;
+      fields=[];
+      for(var ai=1;ai<=n;ai++){fields.push('asic_'+ai+'_min');fields.push('asic_'+ai+'_max');}
+    } else {
+      fields=['temp_min','temp_max','hum_min','hum_max'];
+      if(stype==='BME280'){fields.push('press_min');fields.push('press_max');}
+    }
+    for(var i=0;i<fields.length;i++){var el=document.getElementById(sid+'_'+fields[i]);if(el&&el.value!=='')a[fields[i]]=parseFloat(el.value);}
+    alarms[sid]=a;
+  }
+  configCache.alarms=alarms;
+  try{
+    var r=await fetchWithTimeout(API+'/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(configCache)}, 8000);
+    var res=await r.json();
+    if(res.status==='ok'){status.textContent='Saved';status.className='save-status ok';}
+    else{status.textContent='Error: '+res.error;status.className='save-status err';}
+  }catch(e){status.textContent='Failed: '+e.message;status.className='save-status err';}
+}
+
+// ── PETSys DAQ panel ──
+var petsysLastSeq = 0;
+var petsysBusy = false;
+var petsysDaqRunning = false;
+var petsysAutoScroll = true;
+
+function toggleAutoScroll() {
+  petsysAutoScroll = !petsysAutoScroll;
+  var btn = document.getElementById('autoScrollBtn');
+  if (petsysAutoScroll) {
+    btn.textContent = 'AUTO-SCROLL ON';
+    btn.style.background = 'var(--ok)';
+    // Jump to bottom immediately when re-enabled
+    var el = document.getElementById('petsysLog');
+    el.scrollTop = el.scrollHeight;
+  } else {
+    btn.textContent = 'AUTO-SCROLL OFF';
+    btn.style.background = 'var(--border)';
+  }
+}
+
+function openPetsysPanel() {
+  document.getElementById('petsysOverlay').classList.add('open');
+  document.getElementById('petsysPanel').classList.add('open');
+  document.getElementById('petsysBtn').classList.add('active');
+  // Load current config values into fields
+  fetch(API+'/config').then(function(r){return r.json();}).then(function(cfg){
+    var p = cfg.petsys || {};
+    var configFile = p.config_file || 'config_muons.ini';
+    // Load thresholds from profile first, then fall back to top-level
+    var profile = (p.config_profiles || {})[configFile] || {};
+    var vth_t1 = profile.vth_t1 !== undefined ? profile.vth_t1 : p.vth_t1;
+    var vth_t2 = profile.vth_t2 !== undefined ? profile.vth_t2 : p.vth_t2;
+    var vth_e  = profile.vth_e  !== undefined ? profile.vth_e  : p.vth_e;
+    document.getElementById('acq-data-dir').value    = p.data_dir   || '';
+    document.getElementById('acq-calib-dir').value   = p.calib_dir  || '';
+    document.getElementById('acq-config').value      = configFile;
+    if (p.cycle_time_s !== undefined) document.getElementById('acq-cycle-time').value = p.cycle_time_s;
+    if (vth_t1 !== undefined) document.getElementById('acq-vth-t1').value = vth_t1;
+    if (vth_t2 !== undefined) document.getElementById('acq-vth-t2').value = vth_t2;
+    if (vth_e  !== undefined) document.getElementById('acq-vth-e').value  = vth_e;
+    if (p.output_format) setOutputFmt(p.output_format);
+    if (p.calib_mode)    setCalibMode(p.calib_mode);
+    // Restore autostart checkbox
+    var as = cfg.autostart || {};
+    var cb = document.getElementById('autostart-enabled');
+    if (cb) cb.checked = !!as.enabled;
+    // Restore MCU monitor checkbox
+    var mcu = cfg.mcu || {};
+    var mcuCb = document.getElementById('mcu-monitor-enabled');
+    if (mcuCb) mcuCb.checked = mcu.monitor_enabled !== false;  // default true
+  }).catch(function(){});
+}
+function closePetsysPanel() {
+  document.getElementById('petsysOverlay').classList.remove('open');
+  document.getElementById('petsysPanel').classList.remove('open');
+  document.getElementById('petsysBtn').classList.remove('active');
+}
+function clearPetsysLog() {
+  document.getElementById('petsysLog').innerHTML = '';
+  petsysLastSeq = 0;
+}
+
+function applyPetsysButtonStates() {
+  var busy = petsysBusy;
+  var running = petsysDaqRunning;
+  document.getElementById('ps-daq-on').disabled    = busy || running;
+  document.getElementById('ps-daq-off').disabled   = busy || !running;
+  document.getElementById('ps-i2c-test').disabled  = busy || !running;
+  document.getElementById('ps-lvds-test').disabled = busy || !running;
+  document.getElementById('ps-link-test').disabled = busy || !running;
+  document.getElementById('ps-comms-test').disabled = busy || !running;
+  var ap_on  = document.getElementById('ps-asic-on');
+  var ap_off = document.getElementById('ps-asic-off');
+  var ap_cyc = document.getElementById('ps-asic-cycle');
+  if(ap_on)  ap_on.disabled  = busy || !running;
+  if(ap_off) ap_off.disabled = busy || !running;
+  if(ap_cyc) ap_cyc.disabled = busy || !running;
+}
+
+function updateDaqStatus(running) {
+  petsysDaqRunning = running;
+  var dot   = document.getElementById('daqStatusDot');
+  var label = document.getElementById('daqStatusLabel');
+  dot.style.background = running ? 'var(--ok)' : 'var(--err)';
+  label.style.color    = running ? 'var(--ok)' : 'var(--err)';
+  label.textContent    = running ? 'ON' : 'OFF';
+  applyPetsysButtonStates();
+}
+
+function updateAsicPwrStatus(on) {
+  var dot   = document.getElementById('asicPwrDot');
+  var label = document.getElementById('asicPwrLabel');
+  if (!dot || !label) return;
+  dot.style.background = on ? 'var(--ok)' : 'var(--err)';
+  label.style.color    = on ? 'var(--ok)' : 'var(--err)';
+  label.textContent    = on ? 'ON' : 'OFF';
+}
+
+function updateMainsPwrStatus(status) {
+  var sep   = document.getElementById('mainsPwrSep');
+  var title = document.getElementById('mainsPwrTitle');
+  var dot   = document.getElementById('mainsPwrDot');
+  var label = document.getElementById('mainsPwrLabel');
+  if (!dot || !label) return;
+  if (status === 'unknown' && !label.textContent) {
+    // lpmcu not available — hide the indicator
+    sep.style.display = 'none';
+    title.style.display = 'none';
+    dot.style.display = 'none';
+    label.style.display = 'none';
+    return;
+  }
+  // Show the indicator
+  sep.style.display = '';
+  title.style.display = '';
+  dot.style.display = 'inline-block';
+  label.style.display = '';
+  if (status === 'on') {
+    dot.style.background = 'var(--ok)';
+    label.style.color = 'var(--ok)';
+    label.textContent = 'MAINS';
+  } else if (status === 'off') {
+    dot.style.background = 'var(--err)';
+    label.style.color = 'var(--err)';
+    label.textContent = 'BATTERY';
+  } else if (status === 'disabled') {
+    dot.style.background = 'var(--dim)';
+    label.style.color = 'var(--dim)';
+    label.textContent = 'OFF';
+  } else {
+    dot.style.background = 'var(--warn)';
+    label.style.color = 'var(--warn)';
+    label.textContent = 'N/A';
+  }
+}
+
+var PETSYS_LOG_MAX_LINES = 500;
+
+function appendPetsysLog(kind, ts, text) {
+  _appendPetsysLines([{kind:kind, ts:ts, text:text}]);
+}
+
+function _appendPetsysLines(entries) {
+  if (!entries || entries.length === 0) return;
+  var el = document.getElementById('petsysLog');
+  var wasAtBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 60;
+
+  // Single DocumentFragment = one reflow for all lines
+  var frag = document.createDocumentFragment();
+  entries.forEach(function(entry) {
+    var line = document.createElement('div');
+    line.innerHTML = '<span style="color:var(--border)">['+entry.ts+'] </span>'
+                   + '<span class="log-'+entry.kind+'">'
+                   + entry.text.replace(/</g,'&lt;')+'</span>';
+    frag.appendChild(line);
+  });
+  el.appendChild(frag);
+
+  // Trim oldest lines if over cap — keeps DOM lean
+  while (el.children.length > PETSYS_LOG_MAX_LINES) {
+    el.removeChild(el.firstChild);
+  }
+
+  // Only auto-scroll if enabled and user hasn't scrolled up
+  if (petsysAutoScroll) el.scrollTop = el.scrollHeight;
+}
+
+async function petsysCmd(cmd) {
+  petsysBusy = true;
+  applyPetsysButtonStates();
+  try {
+    await fetchWithTimeout(API+'/petsys/cmd', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cmd:cmd})}, 8000);
+  } catch(e) {
+    appendPetsysLog('fail', '--:--:--', 'Request failed: '+e.message);
+    petsysBusy = false;
+    applyPetsysButtonStates();
+  }
+}
+
+async function triggerPanic() {
+  if (!confirm('EMERGENCY STOP\n\nThis will immediately:\n  • Stop acquisition\n  • Turn off ASIC power\n  • Stop daqd\n\nProceed?')) return;
+  try {
+    await fetchWithTimeout(API+'/petsys/cmd', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cmd:'panic'})}, 8000);
+    appendPetsysLog('fail', new Date().toLocaleTimeString(), '🛑 PANIC shutdown triggered');
+  } catch(e) {
+    appendPetsysLog('fail', '--:--:--', 'Panic request failed: '+e.message);
+  }
+}
+
+var currentOutputFmt = 'textCompact';
+
+// fetchWithTimeout — works on all browsers including older Firefox/Chromium
+function fetchWithTimeout(url, options, ms) {
+  var ctrl = new AbortController();
+  var timer = setTimeout(function(){ ctrl.abort(); }, ms || 5000);
+  var opts = Object.assign({}, options || {}, {signal: ctrl.signal});
+  return fetch(url, opts).finally(function(){ clearTimeout(timer); });
+}
+
+// ── Alarms panel ─────────────────────────────────────────────────────
+var alarmsSoundEnabled = false;
+var alarmsEmailEnabled = false;
+
+function toggleAlarmSection(id, btn) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  btn.textContent  = isOpen ? 'EDIT' : 'CLOSE';
+  btn.style.color  = isOpen ? 'var(--accent)' : 'var(--ok)';
+  // Lazy-load thresholds when opened
+  if (!isOpen && id === 'threshSection' && configCache) {
+    renderAlarmThresholds(configCache);
+  }
+  if (!isOpen && id === 'emailSection' && configCache) {
+    renderEmailList(configCache.email && configCache.email.recipients || []);
+  }
+}
+
+function openAlarmsPanel() {
+  document.getElementById('alarmsOverlay').classList.add('open');
+  document.getElementById('alarmsPanel').classList.add('open');
+  document.getElementById('alarmsBtn').classList.add('active');
+  // Reset sections to collapsed
+  ['emailSection','threshSection'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+    // Reset edit buttons
+    var btns = document.querySelectorAll('[onclick*="' + id + '"]');
+    btns.forEach(function(b){ b.textContent='EDIT'; b.style.color='var(--accent)'; });
+  });
+  fetchConfig().then(function(cfg) {
+    if (!cfg) return;
+    alarmsSoundEnabled = !isMuted;
+    updateAlarmSoundBtn();
+    alarmsEmailEnabled = cfg.email && cfg.email.enabled;
+    updateAlarmEmailBtn();
+  });
+}
+
+function closeAlarmsPanel() {
+  document.getElementById('alarmsOverlay').classList.remove('open');
+  document.getElementById('alarmsPanel').classList.remove('open');
+  document.getElementById('alarmsBtn').classList.remove('active');
+}
+
+function updateAlarmSoundBtn() {
+  var btn = document.getElementById('alarmSoundBtn');
+  if (!btn) return;
+  btn.textContent = alarmsSoundEnabled ? 'SOUND ON' : 'SOUND OFF';
+  btn.style.borderColor = alarmsSoundEnabled ? 'var(--ok)' : 'var(--border)';
+  btn.style.color       = alarmsSoundEnabled ? 'var(--ok)' : 'var(--dim)';
+}
+
+function updateAlarmEmailBtn() {
+  var btn = document.getElementById('alarmEmailBtn');
+  if (!btn) return;
+  btn.textContent = alarmsEmailEnabled ? 'EMAIL ON' : 'EMAIL OFF';
+  btn.style.borderColor = alarmsEmailEnabled ? 'var(--ok)' : 'var(--border)';
+  btn.style.color       = alarmsEmailEnabled ? 'var(--ok)' : 'var(--dim)';
+}
+
+function alarmToggleSound() {
+  isMuted = !isMuted;
+  alarmsSoundEnabled = !isMuted;
+  updateAlarmSoundBtn();
+  var muteBtn = document.getElementById('muteBtn');
+  if (muteBtn) muteBtn.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
+}
+
+async function alarmToggleEmail() {
+  try {
+    var r = await fetchWithTimeout(API+'/email/toggle', {}, 5000);
+    if (!r.ok) return;
+    var d = await r.json();
+    alarmsEmailEnabled = d.enabled;
+    updateAlarmEmailBtn();
+    updateEmailBtn(d.enabled);
+  } catch(e) {}
+}
+
+function renderEmailList(recipients) {
+  var container = document.getElementById('emailListContainer');
+  if (!container) return;
+  container.innerHTML = recipients.map(function(email, i) {
+    return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+      + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--fg);flex:1">' + email + '</span>'
+      + '<button onclick="alarmRemoveEmail(' + i + ')" style="font-family:\'JetBrains Mono\',monospace;font-size:9px;padding:2px 6px;border:1px solid var(--err);border-radius:2px;background:var(--bg);color:var(--err);cursor:pointer">✕</button>'
+      + '</div>';
+  }).join('') || '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--dim)">No recipients</div>';
+}
+
+function alarmRemoveEmail(idx) {
+  if (!configCache || !configCache.email) return;
+  configCache.email.recipients.splice(idx, 1);
+  renderEmailList(configCache.email.recipients);
+}
+
+function alarmAddEmail() {
+  var input = document.getElementById('newEmailInput');
+  var email = input.value.trim();
+  if (!email || !email.includes('@')) return;
+  if (!configCache) configCache = {};
+  if (!configCache.email) configCache.email = {};
+  if (!configCache.email.recipients) configCache.email.recipients = [];
+  if (!configCache.email.recipients.includes(email)) {
+    configCache.email.recipients.push(email);
+    renderEmailList(configCache.email.recipients);
+  }
+  input.value = '';
+}
+
+async function alarmSaveEmails() {
+  var status = document.getElementById('emailSaveStatus');
+  if (!configCache) return;
+  try {
+    var patch = {email: {recipients: configCache.email.recipients || []}};
+    var r = await fetchWithTimeout(API+'/config', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(patch)
+    }, 5000);
+    status.textContent = r.ok ? '✔ Saved' : '✘ Failed';
+    status.style.color = r.ok ? 'var(--ok)' : 'var(--err)';
+  } catch(e) {
+    status.textContent = '✘ Error: ' + e.message;
+    status.style.color = 'var(--err)';
+  }
+}
+
+function renderAlarmThresholds(cfg) {
+  var container = document.getElementById('alarmThreshContent');
+  if (!container) return;
+  var alarms = cfg.alarms || {};
+  var sensors = cfg.sensors || {};
+  var html = '';
+  for (var sid in sensors) {
+    var scfg = sensors[sid];
+    var a = alarms[sid] || {};
+    var label = scfg.label || sid;
+    html += '<div style="margin-bottom:10px"><div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;font-weight:bold;color:var(--accent);margin-bottom:4px">' + label + '</div>';
+    var fields = [];
+    if (scfg.type === 'BME280') {
+      fields = [['temp','Temp °C',0.1],['hum','Hum %',0.1],['press','Press kPa',0.1]];
+    } else if (scfg.type === 'HDC302x' || scfg.type === 'SHT45') {
+      fields = [['temp','Temp °C',0.1],['hum','Hum %',0.1]];
+    } else if (scfg.type === 'HWT905') {
+      fields = [['tilt_x','Tilt X °',0.1],['tilt_y','Tilt Y °',0.1]];
+    } else if (scfg.type === 'A1Temp') {
+      var n = scfg.num_asics || 4;
+      for (var ai = 1; ai <= n; ai++) {
+        fields.push(['asic_'+ai, 'ASIC '+ai+' °C', 0.5]);
+      }
+    }
+    fields.forEach(function(f) {
+      var key = f[0], lbl = f[1], step = f[2];
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
+        + '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:var(--dim);width:90px">' + lbl + '</span>'
+        + '<input type="number" step="' + step + '" id="at_'+sid+'_'+key+'_min" value="'+(a[key+'_min']!=null?a[key+'_min']:'')+'" placeholder="min" style="width:60px;font-family:\'JetBrains Mono\',monospace;font-size:10px;padding:3px 5px;background:var(--bg);border:1px solid var(--border);border-radius:2px;color:var(--fg)">'
+        + '<span style="color:var(--dim);font-size:10px">—</span>'
+        + '<input type="number" step="' + step + '" id="at_'+sid+'_'+key+'_max" value="'+(a[key+'_max']!=null?a[key+'_max']:'')+'" placeholder="max" style="width:60px;font-family:\'JetBrains Mono\',monospace;font-size:10px;padding:3px 5px;background:var(--bg);border:1px solid var(--border);border-radius:2px;color:var(--fg)">'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  container.innerHTML = html || '<div style="color:var(--dim);font-size:10px">No sensors configured</div>';
+}
+
+async function alarmSaveThresholds() {
+  var status = document.getElementById('alarmThreshStatus');
+  if (!configCache) return;
+  var alarms = {};
+  for (var sid in configCache.sensors) {
+    var scfg = configCache.sensors[sid];
+    var a = {};
+    var fields = [];
+    if (scfg.type === 'BME280') fields = ['temp','hum','press'];
+    else if (scfg.type === 'HDC302x' || scfg.type === 'SHT45') fields = ['temp','hum'];
+    else if (scfg.type === 'HWT905') fields = ['tilt_x','tilt_y'];
+    else if (scfg.type === 'A1Temp') {
+      var n = scfg.num_asics || 4;
+      for (var ai = 1; ai <= n; ai++) fields.push('asic_'+ai);
+    }
+    fields.forEach(function(f) {
+      var minEl = document.getElementById('at_'+sid+'_'+f+'_min');
+      var maxEl = document.getElementById('at_'+sid+'_'+f+'_max');
+      if (minEl && minEl.value !== '') a[f+'_min'] = parseFloat(minEl.value);
+      if (maxEl && maxEl.value !== '') a[f+'_max'] = parseFloat(maxEl.value);
+    });
+    if (Object.keys(a).length > 0) alarms[sid] = a;
+  }
+  try {
+    var r = await fetchWithTimeout(API+'/config', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({alarms: alarms})
+    }, 5000);
+    status.textContent = r.ok ? '✔ Saved' : '✘ Failed';
+    status.style.color = r.ok ? 'var(--ok)' : 'var(--err)';
+    if (r.ok && configCache) configCache.alarms = alarms;
+  } catch(e) {
+    status.textContent = '✘ Error: ' + e.message;
+    status.style.color = 'var(--err)';
+  }
+}
+
+async function alarmTestEmail() {
+  var status = document.getElementById('alarmTestStatus');
+  status.textContent = 'Sending…';
+  status.style.color = 'var(--dim)';
+  try {
+    var r = await fetchWithTimeout(API+'/email/test', {}, 8000);
+    var d = await r.json();
+    if (r.ok) {
+      status.textContent = '✔ Test email sent';
+      status.style.color = 'var(--ok)';
+    } else {
+      status.textContent = '✘ ' + (d.error || 'Failed');
+      status.style.color = 'var(--err)';
+    }
+  } catch(e) {
+    status.textContent = '✘ ' + e.message;
+    status.style.color = 'var(--err)';
+  }
+}
+
+// Update alarms button email state from poll
+function updateEmailBtn(enabled) {
+  alarmsEmailEnabled = enabled;
+  updateAlarmEmailBtn();
+}
+
+var isMuted = false;
+
+function setCalibMode(mode, btn) {
+  currentCalibMode = mode;
+  ['off','on','auto'].forEach(function(m) {
+    var b = document.getElementById('cmode-'+m);
+    if (!b) return;
+    var active = (m === mode);
+    b.style.background   = active ? 'var(--accent)' : 'var(--bg)';
+    b.style.color        = active ? '#0c0e13'       : 'var(--dim)';
+    b.style.borderColor  = active ? 'var(--accent)' : 'var(--border)';
+    b.style.fontWeight   = active ? 'bold'          : 'normal';
+  });
+}
+
+var currentCalibMode = 'off';
+
+function setOutputFmt(fmt, btn) {
+  currentOutputFmt = fmt;
+  document.getElementById('fmt-text').style.background   = fmt==='textCompact'   ? 'var(--accent)' : 'var(--bg)';
+  document.getElementById('fmt-text').style.color        = fmt==='textCompact'   ? '#0c0e13'       : 'var(--dim)';
+  document.getElementById('fmt-text').style.borderColor  = fmt==='textCompact'   ? 'var(--accent)'  : 'var(--border)';
+  document.getElementById('fmt-binary').style.background = fmt==='binaryCompact' ? 'var(--accent)' : 'var(--bg)';
+  document.getElementById('fmt-binary').style.color      = fmt==='binaryCompact' ? '#0c0e13'       : 'var(--dim)';
+  document.getElementById('fmt-binary').style.borderColor= fmt==='binaryCompact' ? 'var(--accent)'  : 'var(--border)';
+}
+
+async function startSequence() {
+  var steps = [];
+  if (document.getElementById('seq-temp').checked) steps.push('temp_stable');
+  if (document.getElementById('seq-cal').checked)  steps.push('calibrate');
+  if (document.getElementById('seq-acq').checked)  steps.push('acquire');
+  if (steps.length === 0) {
+    appendPetsysLog('warn', new Date().toLocaleTimeString(), 'No steps selected.');
+    return;
+  }
+  await saveAcqConfig();
+  try {
+    await fetchWithTimeout(API+'/petsys/acq', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'sequence', steps:steps})}, 8000);
+  } catch(e) { appendPetsysLog('fail','--:--:--','Sequence start failed: '+e.message); }
+}
+
+async function acqAction(action) {
+  if (action === 'start') {
+    await saveAcqConfig();
+    document.getElementById('ps-acq-start').disabled = true;
+    document.getElementById('ps-acq-stop').disabled  = false;
+  }
+  try {
+    await fetchWithTimeout(API+'/petsys/acq', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:action})}, 8000);
+  } catch(e) { appendPetsysLog('fail','--:--:--', action+' failed: '+e.message); }
+}
+
+async function toggleAutostartEnabled(cb) {
+  var patch = {autostart: {enabled: cb.checked}};
+  try {
+    await fetchWithTimeout(API+'/config', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(patch)
+    }, 5000);
+    appendPetsysLog('ok', new Date().toLocaleTimeString(),
+      '✔ Auto-start on reboot: ' + (cb.checked ? 'ENABLED' : 'DISABLED'));
+  } catch(e) {}
+}
+
+async function toggleMcuMonitor(cb) {
+  var patch = {mcu: {monitor_enabled: cb.checked}};
+  try {
+    await fetchWithTimeout(API+'/config', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(patch)
+    }, 5000);
+    appendPetsysLog('ok', new Date().toLocaleTimeString(),
+      '✔ MCU power monitor: ' + (cb.checked ? 'ENABLED' : 'DISABLED'));
+  } catch(e) {}
+}
+
+async function saveAsAutostart() {
+  var steps = [];
+  if (document.getElementById('seq-temp') && document.getElementById('seq-temp').checked)
+    steps.push('temp_stable');
+  if (document.getElementById('seq-cal') && document.getElementById('seq-cal').checked)
+    steps.push('calibrate');
+  if (document.getElementById('seq-acq') && document.getElementById('seq-acq').checked)
+    steps.push('acquire');
+  if (steps.length === 0) steps = ['temp_stable','acquire'];
+
+  var patch = { autostart: {
+    enabled:      true,
+    delay_s:      5,
+    sequence:     steps,
+    calib_mode:   currentCalibMode,
+    cycle_time_s: parseInt(document.getElementById('acq-cycle-time').value) || 600,
+    vth_t1: parseInt(document.getElementById('acq-vth-t1').value),
+    vth_t2: parseInt(document.getElementById('acq-vth-t2').value),
+    vth_e:  parseInt(document.getElementById('acq-vth-e').value),
+  }};
+  try {
+    var r = await fetchWithTimeout(API+'/config', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(patch)
+    }, 5000);
+    if (r.ok) {
+      appendPetsysLog('ok', new Date().toLocaleTimeString(),
+        '✔ Auto-start settings saved: ' + steps.join(' → '));
+    }
+  } catch(e) {
+    appendPetsysLog('fail', '--:--:--', 'Save autostart failed: ' + e.message);
+  }
+}
+
+async function saveAcqConfig() {
+  var dataDir   = document.getElementById('acq-data-dir').value.trim();
+  var calibDir  = document.getElementById('acq-calib-dir').value.trim();
+  var configFile= document.getElementById('acq-config').value.trim() || 'config_muons.ini';
+
+  var vt1 = parseInt(document.getElementById('acq-vth-t1').value);
+  var vt2 = parseInt(document.getElementById('acq-vth-t2').value);
+  var ve  = parseInt(document.getElementById('acq-vth-e').value);
+
+  var patch = { petsys: {
+    cycle_time_s:  parseInt(document.getElementById('acq-cycle-time').value) || 600,
+    output_format: currentOutputFmt,
+    calib_mode:    currentCalibMode,
+    config_profiles: {}
+  }};
+  // Write thresholds to the profile for the current config file
+  patch.petsys.config_profiles[configFile] = { vth_t1: vt1, vth_t2: vt2, vth_e: ve };
+  if (dataDir)    patch.petsys.data_dir    = dataDir;
+  if (calibDir)   patch.petsys.calib_dir   = calibDir;
+  if (configFile) patch.petsys.config_file = configFile;
+  try {
+    var r = await fetchWithTimeout(API+'/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch)}, 8000);
+    var res = await r.json();
+    appendPetsysLog(res.status==='ok'?'ok':'fail', new Date().toLocaleTimeString(),
+                    res.status==='ok' ? 'Config saved.' : 'Config save failed: '+res.error);
+  } catch(e) { appendPetsysLog('fail','--:--:--','Config save failed: '+e.message); }
+}
+
+async function pollPetsys() {
+  try {
+    var r = await fetchWithTimeout(API+'/petsys/status?seq='+petsysLastSeq, {}, 3000);
+    if (!r.ok) return;
+    var data = await r.json();
+    updateDaqStatus(data.daq_running);
+    updateAsicPwrStatus(data.asic_power || false);
+    var mainsStatus = data.mains_power || 'unknown';
+    updateMainsPwrStatus(mainsStatus);
+    // Show MCU toggle on any machine that reports mains status (even unknown after first check)
+    var mcuLabel = document.getElementById('mcu-toggle-label');
+    if (mcuLabel && data.mains_check !== null && data.mains_check !== undefined) {
+      mcuLabel.style.display = 'flex';
+    }
+
+    // Acquisition state
+    var acqRunning = data.acq_running || false;
+    var acqTask    = data.acq_task    || '';
+    var cycle      = data.acq_cycle   || 0;
+    var filename   = data.acq_filename || '';
+    var calib      = data.acq_calib   || '';
+    document.getElementById('acqCycleLabel').textContent    = acqTask==='acquiring' ? String(cycle).padStart(5,'0') : '—';
+    document.getElementById('acqCalibLabel').textContent    = calib || (acqRunning ? 'default' : '—');
+    document.getElementById('acqFilenameLabel').textContent = filename ? filename : (acqTask==='acquiring' ? 'generating...' : '—');
+
+    // Pulse only the currently active workflow button
+    var taskMap = {'temp_stable':'ps-temp-stable','calibrating':'ps-calibrate','acquiring':'ps-acq-start'};
+    ['ps-temp-stable','ps-calibrate','ps-acq-start'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (acqRunning && taskMap[acqTask] === id) el.classList.add('running');
+      else el.classList.remove('running');
+    });
+
+    // Sequence button and step label
+    var seqBtn = document.getElementById('ps-seq-start');
+    if (seqBtn) seqBtn.disabled = acqRunning;
+    var seqLabel = document.getElementById('seqStepLabel');
+    if (seqLabel) {
+      if (acqRunning && acqTask) {
+        var taskNames = {'temp_stable':'① Temp Stable…','calibrating':'② Calibrating…','acquiring':'③ Acquiring…'};
+        seqLabel.textContent = taskNames[acqTask] || acqTask;
+      } else {
+        seqLabel.textContent = '';
+      }
+    }
+    var mainFn = document.getElementById('mainFilenameBar');
+    if (mainFn) {
+      if (acqRunning) {
+        mainFn.style.display = 'flex';
+        var taskLabels = {'temp_stable':'TEMP STABLE','calibrating':'CALIBRATING','acquiring':'ACQ ON'};
+        mainFn.querySelector('span:first-child').textContent =
+          '● ' + (taskLabels[acqTask] || 'RUNNING');
+        document.getElementById('mainAcqFilename').textContent =
+          acqTask==='acquiring' ? (filename || 'generating...') : '';
+        document.getElementById('mainAcqCycle').textContent =
+          acqTask==='acquiring' && cycle ? ('cycle ' + String(cycle).padStart(5,'0')) : '';
+      } else {
+        mainFn.style.display = 'none';
+      }
+    }
+    document.getElementById('ps-acq-start').disabled = acqRunning || !petsysDaqRunning;
+    document.getElementById('ps-acq-stop').disabled  = !acqRunning;
+
+    // Append only new lines (server already filtered by seq)
+    var newLines = data.log || [];
+    if (newLines.length > 0) {
+      _appendPetsysLines(newLines);
+      petsysLastSeq = data.max_seq || petsysLastSeq;
+    }
+
+    // Unlock DAQ control buttons when command finishes
+    if (petsysBusy && newLines.length > 0) {
+      var done = newLines.some(function(entry) {
+        var t = entry.text || '';
+        return entry.kind === 'ok' || entry.kind === 'fail' ||
+               t.includes('started') || t.includes('stopped') || t.includes('powered');
+      });
+      if (done) {
+        petsysBusy = false;
+        applyPetsysButtonStates();
+      }
+    }
+  } catch(e) {}
+}
+
+var _petsysPollTimer = null;
+function schedulePetsysPoll() {
+  if (_petsysPollTimer) clearTimeout(_petsysPollTimer);
+  var delay = petsysBusy ? 500 : 2000;
+  _petsysPollTimer = setTimeout(function() {
+    pollPetsys().then(schedulePetsysPoll);
+  }, delay);
+}
+schedulePetsysPoll();
+
+// ── Theme toggle ──
+async function toggleEmail() {
+  try {
+    var r = await fetchWithTimeout(API+'/email/toggle', {}, 5000);
+    if (!r.ok) return;
+    var d = await r.json();
+    updateEmailBtn(d.enabled);
+  } catch(e) { console.error('Email toggle failed:', e); }
+}
+
+function updateEmailBtn(enabled) {
+  var btn = document.getElementById('emailBtn');
+  if (!btn) return;
+  btn.textContent = enabled ? '✉ EMAIL ON' : '✉ EMAIL OFF';
+  btn.style.borderColor = enabled ? 'var(--ok)'  : 'var(--border)';
+  btn.style.color       = enabled ? 'var(--ok)'  : 'var(--dim)';
+}
+
+function toggleTheme() {
+  var isLight = document.body.classList.toggle('light');
+  var btn = document.getElementById('themeBtn');
+  btn.textContent = isLight ? '☾ DARK' : '☀ LIGHT';
+  try { localStorage.setItem('kodaq-theme', isLight ? 'light' : 'dark'); } catch(e) {}
+}
+(function() {
+  try {
+    if (localStorage.getItem('kodaq-theme') === 'light') {
+      document.body.classList.add('light');
+      document.addEventListener('DOMContentLoaded', function() {
+        var btn = document.getElementById('themeBtn');
+        if (btn) btn.textContent = '☾ DARK';
+      });
+    }
+  } catch(e) {}
+})();
+
+// ── Disk space + RAM ──
+var diskHistory = [];   // {x, y: free_pct}
+var ramHistory  = [];   // {x, y: ram_MB}
+
+async function pollDiskSpace() {
+  try {
+    var r = await fetchWithTimeout(API+'/diskspace', {}, 3000);
+    if (!r.ok) return;
+    var d = await r.json();
+    diskHistory = (d.history || []).map(function(p) {
+      return {x: new Date(p[0]), y: p[1]};
+    });
+    diskHistory.push({x: new Date(), y: d.free_pct});
+    updateDiskChart();
+  } catch(e) {}
+}
+
+function updateDiskChart() {
+  if (!chartDisk) return;
+  var now    = new Date();
+  var cutoff = new Date(now - timeRangeMin * 60 * 1000);
+  var filtered = diskHistory.length > 0
+    ? diskHistory.filter(function(p){ return p.x >= cutoff; })
+    : [];
+  // If filter removed everything but we have data, show at least the latest point
+  if (filtered.length === 0 && diskHistory.length > 0) {
+    filtered = [diskHistory[diskHistory.length - 1]];
+  }
+
+  var thresholds = [40, 30, 20, 10, 5];
+  var colors     = ['#ffa726','#ff7043','#ef5350','#b71c1c','#7b0000'];
+
+  var filteredRam = ramHistory.filter(function(p){ return p.x >= cutoff; });
+
+  var datasets = [{
+    label: 'Disk Free %',
+    data:  filtered,
+    borderColor: '#4fc3f7',
+    backgroundColor: 'rgba(79,195,247,0.15)',
+    tension: 0.2,
+    fill: true,
+    borderWidth: 2,
+    pointRadius: 2,
+    yAxisID: 'y',
+  },{
+    label: 'RAM Free GB',
+    data:  filteredRam,
+    borderColor: '#a5d6a7',
+    backgroundColor: 'rgba(165,214,167,0.0)',
+    tension: 0.2,
+    fill: false,
+    borderWidth: 2,
+    pointRadius: 0,
+    yAxisID: 'y1',
+  }];
+
+  // Threshold reference lines (only if there's data to anchor them)
+  if (filtered.length > 0) {
+    thresholds.forEach(function(t, i) {
+      datasets.push({
+        label: t + '% threshold',
+        data:  [{x: cutoff, y: t}, {x: now, y: t}],
+        borderColor: colors[i],
+        borderDash:  [4, 4],
+        borderWidth: 1,
+        pointRadius: 0,
+        fill:  false,
+      });
+    });
+  }
+
+  chartDisk.data.datasets = datasets;
+  try { if(!chartDisk.isZoomedOrPanned()) {
+    chartDisk.options.scales.x.min = cutoff.getTime();
+    chartDisk.options.scales.x.max = now.getTime();
+  }} catch(e) {
+    chartDisk.options.scales.x.min = cutoff.getTime();
+    chartDisk.options.scales.x.max = now.getTime();
+  }
+  chartDisk.update('none');
+
+  var legendEl = document.getElementById('legendDisk');
+  if (legendEl) {
+    var sysD = (window.lastData && window.lastData['__system__']) || {};
+    var diskGbStr = sysD.disk_free_gb != null ? sysD.disk_free_gb.toFixed(0)+' GB' : '—';
+    var ramGbStr  = sysD.ram_free_MB  != null ? Math.round(sysD.ram_free_MB/1024)+' GB' : '—';
+    var clr = sysD.disk_free_pct == null ? 'var(--dim)'
+            : sysD.disk_free_pct <= 5  ? 'var(--err)'
+            : sysD.disk_free_pct <= 20 ? 'var(--warn)'
+            : 'var(--ok)';
+    legendEl.innerHTML =
+      '<span class="chart-legend-item"><span class="swatch" style="background:#4fc3f7"></span>'
+      + 'Disk Free: <span style="color:'+clr+';font-weight:bold">'+diskGbStr+'</span></span>'
+      + '<span class="chart-legend-item"><span class="swatch" style="background:#a5d6a7"></span>'
+      + 'RAM Free: <span style="color:#a5d6a7;font-weight:bold">'+ramGbStr+'</span></span>';
+  }
+}
+
+setInterval(pollDiskSpace, 5000);  // poll every 5s for debugging
+
+// ── Boot ──
+try {
+  initCharts();
+  poll();
+  setTimeout(pollDiskSpace, 500);
+  setInterval(poll, POLL_MS);
+} catch(e) {
+  console.error('Boot error:', e);
+  document.body.insertAdjacentHTML('afterbegin',
+    '<div style="background:red;color:white;padding:10px;font-family:monospace;z-index:9999;position:fixed;top:0;left:0;right:0">'
+    + 'Dashboard boot error: ' + e.message + ' — open browser console (F12) for details</div>');
+}
+
+// ── Draggable legends ──
+document.querySelectorAll('.chart-legend').forEach(function(legend) {
+  var offsetX=0, offsetY=0, dragging=false;
+
+  legend.addEventListener('mousedown', function(e) {
+    dragging = true;
+    legend.classList.add('dragging');
+    var rect = legend.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+    // Switch from auto-positioned to manual
+    legend.style.position = 'absolute';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var parent = legend.parentElement;
+    var pRect = parent.getBoundingClientRect();
+    var x = e.clientX - pRect.left - offsetX;
+    var y = e.clientY - pRect.top - offsetY;
+    // Clamp within parent
+    x = Math.max(0, Math.min(x, pRect.width - legend.offsetWidth));
+    y = Math.max(0, Math.min(y, pRect.height - legend.offsetHeight));
+    legend.style.left = x + 'px';
+    legend.style.top = y + 'px';
+    legend.style.right = 'auto';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (dragging) { dragging = false; legend.classList.remove('dragging'); }
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+cmd_/home/konova2/SlowControl/USB-TO-UART-I2C-SPI-JTAG-Demo/Raspberry/Driver/driver/ch34x_pis.mod := { echo  /home/konova2/SlowControl/USB-TO-UART-I2C-SPI-JTAG-Demo/Raspberry/Driver/driver/ch34x_pis.o;  echo; } > /home/konova2/SlowControl/USB-TO-UART-I2C-SPI-JTAG-Demo/Raspberry/Driver/driver/ch34x_pis.mod

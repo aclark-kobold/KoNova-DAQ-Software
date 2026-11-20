@@ -1,0 +1,1 @@
+cmd_/home/konova2/SlowControl/USB-TO-UART-I2C-SPI-JTAG-Demo/Raspberry/Driver/driver/Module.symvers := sed 's/\.ko$$/\.o/' /home/konova2/SlowControl/USB-TO-UART-I2C-SPI-JTAG-Demo/Raspberry/Driver/driver/modules.order | scripts/mod/modpost -m -a  -o /home/konova2/SlowControl/USB-TO-UART-I2C-SPI-JTAG-Demo/Raspberry/Driver/driver/Module.symvers -e -i Module.symvers   -T -

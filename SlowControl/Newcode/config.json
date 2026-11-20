@@ -1,0 +1,227 @@
+{
+    "system": {
+        "id": "02",
+        "user": "konova2"
+    },
+    "ch347": {
+        "device": "/dev/ch34x_pis0",
+        "i2c_mode": 0
+    },
+    "log": {
+        "directory": "/home/konova2/SlowControl/Newcode/data",
+        "gui_interval_s": 5,
+        "file_interval_s": 30
+    },
+    "email": {
+        "enabled": true,
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "sender": "konova.oxy@gmail.com",
+        "app_password": "dhoi gpca nufy szdn",
+        "recipients": [
+            "gauvreau@oxy.edu",
+            "ifft@oxy.edu",
+            "aclark2@oxy.edu",
+            "thealy2@oxy.edu"
+        ],
+        "cooldown_s": 3600
+    },
+    "alarms": {
+        "BME280_EBox1": {
+            "temp_min": 5,
+            "temp_max": 45,
+            "hum_min": 1,
+            "hum_max": 80,
+            "press_min": 95,
+            "press_max": 106
+        },
+        "BME280_EBox2": {
+            "temp_min": 5,
+            "temp_max": 45,
+            "hum_min": 1,
+            "hum_max": 80,
+            "press_min": 95,
+            "press_max": 106
+        },
+        "SHT_Det1": {
+            "temp_min": 10,
+            "temp_max": 40,
+            "hum_min": 1,
+            "hum_max": 75
+        },
+        "SHT_Det2": {
+            "temp_min": 10,
+            "temp_max": 40,
+            "hum_min": 1,
+            "hum_max": 75
+        },
+        "SHT_Det3": {
+            "temp_min": 10,
+            "temp_max": 40,
+            "hum_min": 1,
+            "hum_max": 75
+        },
+        "SHT_Det4": {
+            "temp_min": 10,
+            "temp_max": 40,
+            "hum_min": 1,
+            "hum_max": 75
+        },
+        "IMU_1": {
+            "tilt_y_min": -5,
+            "tilt_y_max": 5
+        },
+        "ASIC_Temps": {
+            "asic_1_min": 0,
+            "asic_1_max": 60,
+            "asic_2_min": 0,
+            "asic_2_max": 60,
+            "asic_3_min": 0,
+            "asic_3_max": 60,
+            "asic_4_min": 0,
+            "asic_4_max": 60
+        }
+    },
+    "sensors": {
+        "BME280_EBox1": {
+            "type": "BME280",
+            "address": "0x77",
+            "mux_address": "0x70",
+            "mux_channel": 4,
+            "label": "Petsys Box ",
+            "offsets": {
+                "temp": 0,
+                "hum": 0,
+                "press": 0
+            }
+        },
+        "BME280_EBox2": {
+            "type": "BME280",
+            "address": "0x77",
+            "mux_address": "0x70",
+            "mux_channel": 5,
+            "label": "PC Box",
+            "offsets": {
+                "temp": 0,
+                "hum": 0,
+                "press": 0
+            }
+        },
+        "SHT_Det1": {
+            "type": "SHT45",
+            "address": "0x44",
+            "mux_address": "0x70",
+            "mux_channel": 0,
+            "label": "Detector Box 1",
+            "offsets": {
+                "temp": 0.0,
+                "hum": 0.0
+            }
+        },
+        "SHT_Det2": {
+            "type": "SHT45",
+            "address": "0x44",
+            "mux_address": "0x70",
+            "mux_channel": 1,
+            "label": "Detector Box 2",
+            "offsets": {
+                "temp": 0.0,
+                "hum": 0.0
+            }
+        },
+        "SHT_Det3": {
+            "type": "SHT45",
+            "address": "0x44",
+            "mux_address": "0x70",
+            "mux_channel": 2,
+            "label": "Detector Box 3",
+            "offsets": {
+                "temp": 0.0,
+                "hum": 0.0
+            }
+        },
+        "SHT_Det4": {
+            "type": "SHT45",
+            "address": "0x44",
+            "mux_address": "0x70",
+            "mux_channel": 3,
+            "label": "Detector Box 4",
+            "offsets": {
+                "temp": 0.0,
+                "hum": 0.0
+            }
+        },
+        "IMU_1": {
+            "type": "HWT905",
+            "port": "/dev/ttyIMU",
+            "baud": 9600,
+            "label": "Detector IMU"
+        },
+        "Linux_CPU": {
+            "type": "LinuxTemp",
+            "label": "Linux CPU",
+            "exclude_zones": [
+                "acpitz",
+                "iwlwifi_1"
+            ]
+        },
+        "ASIC_Temps": {
+            "type": "A1Temp",
+            "build_dir": "/home/konova2/Desktop/petsys/sw_daq_tofpet2-2026.03.20/build",
+            "label": "PETSys ASICs",
+            "asic_ids": [
+                1,
+                5,
+                8,
+                13
+            ]
+        }
+    },
+    "autostart": {
+        "enabled": true,
+        "delay_s": 5,
+        "sequence": [
+            "temp_stable",
+            "acquire"
+        ],
+        "calib_mode": "on",
+        "cycle_time_s": 600,
+        "vth_t1": 10,
+        "vth_t2": 10,
+        "vth_e": 8
+    },
+    "petsys": {
+        "cycle_time_s": 600,
+        "output_format": "textCompact",
+        "calib_mode": "on",
+        "data_dir": "/home/konova2/Desktop/petsys/data",
+        "calib_dir": "/home/konova2/Desktop/petsys/data",
+        "config_file": "config_muons2.ini",
+        "calib_step_deg": 3,
+        "config_profiles": {
+            "config_muons2.ini": {
+                "vth_t1": 10,
+                "vth_t2": 10,
+                "vth_e": 8
+            }
+        },
+        "gdrive_remote": "konova",
+        "gdrive_folder": "KoNova/Data",
+        "s3_endpoint": "https://s3.us-west-2.idrivee2.com",
+        "s3_bucket": "konova-data",
+        "s3_profile": "idrive",
+        "kobold_s3_enabled": true,
+        "kobold_s3_bucket": "kobold-muography",
+        "kobold_s3_prefix": "konova/KNVA-02/raw/",
+        "kobold_s3_profile": "knva02-s3",
+        "kobold_s3_region": "us-west-2",
+        "kobold_s3_config_enabled": true,       
+        "kobold_s3_config_prefix": "konova/KNVA-02/config/",
+        "thermal": {
+            "max_asic_temp": 62
+        }
+    },
+    "acquisition": {
+        "retry_on_failure": true
+    }
+}
